@@ -125,15 +125,34 @@ class Ui_MainWindow(object):
         # Get Current Date Data
         today = obter_data_atual()
 
-        # Date Labels
+        # Day
         self.label_day = QLabel(today["dia"])
         self.label_day.setStyleSheet("font-size: 42px; font-weight: bold; color: white;")
-        self.label_month_week = QLabel(f"{today['mes']} • {today['semana']}")
-        self.label_month_week.setStyleSheet("font-size: 13px; color: #a9abae;")
 
-        # Add Labels to Agenda Layout
-        self.agenda_layout.addWidget(self.label_day)
-        self.agenda_layout.addWidget(self.label_month_week)
+        # Month
+        self.label_month = QLabel(today["mes"])
+        self.label_month.setStyleSheet("font-size: 13px; color: #a9abae;")
+
+        # Week
+        self.label_week = QLabel(today["semana"])
+        self.label_week.setStyleSheet("font-size: 13px; color: #a9abae;")
+
+        # Right Side Layout (Month and Week stacked vertically)
+        self.right_side_layout = QVBoxLayout()
+        self.right_side_layout.setContentsMargins(0, 0, 0, 0)
+        self.right_side_layout.setSpacing(2)
+        self.right_side_layout.addWidget(self.label_month)
+        self.right_side_layout.addWidget(self.label_week)
+
+        # Main Date Layout (Day on the left, Right Side block next to it)
+        self.main_date_layout = QHBoxLayout()
+        self.main_date_layout.setContentsMargins(0, 0, 0, 0)
+        self.main_date_layout.setSpacing(10)
+        self.main_date_layout.addWidget(self.label_day)
+        self.main_date_layout.addLayout(self.right_side_layout)
+
+        # Add Main Date Layout to Agenda Layout
+        self.agenda_layout.addLayout(self.main_date_layout)
 
         # Stretch
         self.agenda_layout.addStretch()
