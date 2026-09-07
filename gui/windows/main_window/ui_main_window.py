@@ -50,7 +50,7 @@ class Ui_MainWindow(object):
         
         # Vertical Layout 
         self.content_layout = QVBoxLayout(self.content)
-        self.content_layout.setContentsMargins(15, 15, 15, 0)
+        self.content_layout.setContentsMargins(15, 15, 0, 0)
         self.content_layout.setSpacing(15)
 
         # Custom Clickable LineEdit Class
@@ -84,7 +84,10 @@ class Ui_MainWindow(object):
             QLineEdit {
                 background-color: #a9abae;
                 color: #1a1521;
-                border-radius: 20px;
+                border-top-right-radius: 0px;
+                border-bottom-right-radius: 0px;
+                border-top-left-radius: 20px;
+                border-bottom-left-radius: 20px;
                 padding-left: 15px;
                 font-size: 14px;
             }
@@ -117,37 +120,41 @@ class Ui_MainWindow(object):
         self.agenda_for_the_day.setStyleSheet("background-color: #585269;")
         self.agenda_for_the_day.setMinimumWidth(230)
 
-        # Layout Agenda For The Day
+        # Layout Agenda For The Day 
         self.agenda_layout = QVBoxLayout(self.agenda_for_the_day)
-        self.agenda_layout.setContentsMargins(15, 15, 15, 15)
-        self.agenda_layout.setSpacing(5)
+        self.agenda_layout.setContentsMargins(5, 0, 15, 15)
+        self.agenda_layout.setSpacing(0)
 
         # Get Current Date Data
         today = obter_data_atual()
 
-        # Day
+        # Day 
         self.label_day = QLabel(today["dia"])
-        self.label_day.setStyleSheet("font-size: 42px; font-weight: bold; color: white;")
+        self.label_day.setStyleSheet("font-size: 64px; font-weight: bold; color: white; margin-top: -12px; margin-bottom: 0px; margin-left: 0px; margin-right: 0px; padding: 0px;")
+        self.label_day.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
         # Month
         self.label_month = QLabel(today["mes"])
-        self.label_month.setStyleSheet("font-size: 13px; color: #a9abae;")
+        self.label_month.setStyleSheet("font-size: 26px; color: #a9abae; margin: 0px; padding: 0px;")
+        self.label_month.setAlignment(Qt.AlignBottom | Qt.AlignLeft)
 
         # Week
         self.label_week = QLabel(today["semana"])
-        self.label_week.setStyleSheet("font-size: 13px; color: #a9abae;")
+        self.label_week.setStyleSheet("font-size: 13px; color: #a9abae; margin: 0px; padding: 0px;")
+        self.label_week.setAlignment(Qt.AlignTop | Qt.AlignLeft)
 
         # Right Side Layout (Month and Week stacked vertically)
         self.right_side_layout = QVBoxLayout()
         self.right_side_layout.setContentsMargins(0, 0, 0, 0)
-        self.right_side_layout.setSpacing(2)
+        self.right_side_layout.setSpacing(0)
+        self.right_side_layout.setAlignment(Qt.AlignCenter)
         self.right_side_layout.addWidget(self.label_month)
         self.right_side_layout.addWidget(self.label_week)
 
         # Main Date Layout (Day on the left, Right Side block next to it)
         self.main_date_layout = QHBoxLayout()
         self.main_date_layout.setContentsMargins(0, 0, 0, 0)
-        self.main_date_layout.setSpacing(10)
+        self.main_date_layout.setSpacing(8)
         self.main_date_layout.addWidget(self.label_day)
         self.main_date_layout.addLayout(self.right_side_layout)
 
