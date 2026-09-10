@@ -8,11 +8,12 @@ from PyQt6.QtCore import Qt
 
 
 class ClientDetailTab(QWidget):
-    def __init__(self, parent=None, db=None, client_id=None, main_window=None):
+    def __init__(self, parent=None, db=None, client_id=None, main_window=None, select_pet_id=None):
         super().__init__(parent)
         self.db = db
         self.client_id = client_id
         self.main_window = main_window
+        self.select_pet_id = select_pet_id  # Guarda o ID do pet recebido
         
         self.current_selected_pet_id = None 
         self._is_loading = False 
@@ -21,6 +22,10 @@ class ClientDetailTab(QWidget):
         self.load_client_data()
         self.load_pets_list()
         self.connect_change_trackers()
+
+        # Se foi aberto clicando diretamente em um pet na lista, já seleciona ele na tela
+        if self.select_pet_id:
+            self.auto_select_pet(self.select_pet_id)
 
     def init_ui(self):
         main_layout = QVBoxLayout(self)
@@ -95,7 +100,7 @@ class ClientDetailTab(QWidget):
         self.add_pet_button.clicked.connect(self.prepare_new_pet_form)
         
         self.remove_pet_button = QPushButton("Remover Pet Selecionado")
-        self.remove_pet_button.setStyleSheet("color: #990000;")
+        self.remove_pet_button.setStyleSheet("color: #ffcccc;")
         self.remove_pet_button.clicked.connect(self.confirm_delete_pet)
 
         pets_btn_layout.addWidget(self.add_pet_button)
@@ -195,6 +200,16 @@ class ClientDetailTab(QWidget):
             item = QListWidgetItem(f"{name} ({species})")
             item.setData(Qt.ItemDataRole.UserRole, pet)
             self.pets_list_widget.addItem(item)
+
+    def auto_select_pet(self, pet_id):
+        """Varre a lista de pets da aba e abre a ficha do pet correspondente automaticamente"""
+        for i in range(self.pets_list_widget.count()):
+            item = self.pets_list_widget.item(i)
+            pet_data = item.data(Qt.ItemDataRole.UserRole)
+            if pet_data[0] == pet_id:
+                self.pets_list_widget.setCurrentItem(item)
+                self.load_pet_into_form(pet_data)
+                break
 
     def save_pet_data(self):
         if not self.db:
