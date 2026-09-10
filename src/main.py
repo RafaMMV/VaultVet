@@ -56,7 +56,7 @@ class MainWindow(QMainWindow):
             self.main_ui.gender_input.currentText(),
             self.main_ui.neutered_input.currentText(),
             self.main_ui.species_input.currentText(),
-            self.main_ui.breed_input.text(),
+            self.main_ui.breed_input.currentText(),
             self.main_ui.birth_date_input.text(),
             self.main_ui.age_input.text(),
             weight_converted,

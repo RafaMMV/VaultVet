@@ -69,7 +69,6 @@ class Database:
     def insert_client_and_pet(self, client_data, pet_data):
         """Insere um novo tutor e o pet vinculado a ele no banco de dados."""
         try:
-            # Insere os dados do tutor
             self.cursor.execute("""
                 INSERT INTO clients (
                     first_name, last_name, zip_code, address, number, 
@@ -78,10 +77,8 @@ class Database:
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, client_data)
             
-            # Pega o ID gerado automaticamente para o tutor
             client_id = self.cursor.lastrowid
 
-            # Insere os dados do pet vinculando ao ID do tutor
             pet_data_with_client = [client_id] + list(pet_data)
             self.cursor.execute("""
                 INSERT INTO patients (
@@ -96,6 +93,37 @@ class Database:
             print(f"Erro ao inserir dados: {e}")
             self.conn.rollback()
 
+    def insert_pet(self, client_id, pet_data):
+        """Insere um novo pet vinculado a um tutor existente."""
+        try:
+            pet_data_with_client = [client_id] + list(pet_data)
+            self.cursor.execute("""
+                INSERT INTO patients (
+                    client_id, pet_name, gender, neutered, species, 
+                    breed, birth_date, age, weight, microchip
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, pet_data_with_client)
+            self.conn.commit()
+            print("Novo pet inserido com sucesso!")
+        except sqlite3.Error as e:
+            print(f"Erro ao inserir pet: {e}")
+            self.conn.rollback()
+
+    def update_pet(self, pet_id, pet_data):
+        """Atualiza todos os dados de um paciente (pet) específico."""
+        try:
+            self.cursor.execute("""
+                UPDATE patients 
+                SET pet_name = ?, gender = ?, neutered = ?, species = ?, 
+                    breed = ?, birth_date = ?, age = ?, weight = ?, microchip = ?
+                WHERE id = ?
+            """, list(pet_data) + [pet_id])
+            self.conn.commit()
+            print("Dados do pet atualizados com sucesso!")
+        except sqlite3.Error as e:
+            print(f"Erro ao atualizar dados do pet: {e}")
+            self.conn.rollback()
+
     def get_all_records(self):
         """Busca a união dos dados de clientes e pacientes para a tabela."""
         try:
@@ -108,6 +136,44 @@ class Database:
         except sqlite3.Error as e:
             print(f"Erro ao buscar registros: {e}")
             return []
+
+    def get_client_by_id(self, client_id):
+        """Busca todos os campos do tutor pelo ID."""
+        try:
+            self.cursor.execute("""
+                SELECT first_name, last_name, zip_code, address, number, 
+                       complement, phone, email, emergency_contact, 
+                       emergency_phone, cpf, rg
+                FROM clients WHERE id = ?
+            """, (client_id,))
+            return self.cursor.fetchone()
+        except sqlite3.Error as e:
+            print(f"Erro ao buscar cliente por ID: {e}")
+            return None
+
+    def get_pets_by_client_id(self, client_id):
+        """Busca todos os campos dos pets vinculados a um tutor."""
+        try:
+            self.cursor.execute("""
+                SELECT id, client_id, pet_name, gender, neutered, 
+                       species, breed, birth_date, age, weight, microchip 
+                FROM patients WHERE client_id = ?
+            """, (client_id,))
+            return self.cursor.fetchall()
+        except sqlite3.Error as e:
+            print(f"Erro ao buscar pets do cliente: {e}")
+            return []
+
+    def delete_client(self, client_id):
+        """Remove o cliente e todos os seus pets do banco de dados."""
+        try:
+            self.cursor.execute("DELETE FROM patients WHERE client_id = ?", (client_id,))
+            self.cursor.execute("DELETE FROM clients WHERE id = ?", (client_id,))
+            self.conn.commit()
+            print("Cliente e pets removidos com sucesso!")
+        except sqlite3.Error as e:
+            print(f"Erro ao remover cliente: {e}")
+            self.conn.rollback()
 
     def close(self):
         """Close the database connection."""

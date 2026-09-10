@@ -33,9 +33,7 @@ class ClientListUI(QWidget):
         records = self.db.get_all_records()
         
         # Dicionário para agrupar tutores por letra inicial e guardar os dados
-        # records retorna: (client_id, tutor_name, phone, pet_name, species)
         alphabet_dict = {}
-        tutors_data = {}
         
         for row in records:
             client_id, tutor_name, phone, pet_name, species = row
@@ -55,30 +53,44 @@ class ClientListUI(QWidget):
             if pet_name:
                 alphabet_dict[first_letter][client_id]["pets"].append(f"{pet_name} ({species})")
 
-        # Preenche a árvore ordenada de A a Z
+        # 1. Preenche a árvore ordenada de A a Z
         for letter in sorted(alphabet_dict.keys()):
-            # Nó pai da Letra (ex: "A", "B", "C")
             letter_item = QTreeWidgetItem(self.tree)
             letter_item.setText(0, letter)
-            letter_item.setFlags(letter_item.flags() & ~Qt.ItemFlag.ItemIsSelectable) # Letra não é clicável/selecionável
+            letter_item.setFlags(letter_item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
             
             for client_id, data in sorted(alphabet_dict[letter].items(), key=lambda x: x[1]["name"]):
-                # Nó do Cliente (com a setinha para expandir os pets)
                 tutor_item = QTreeWidgetItem(letter_item)
                 tutor_item.setText(0, data["name"])
-                tutor_item.setData(0, Qt.ItemDataRole.UserRole, client_id) # Guarda o ID do banco oculto
+                tutor_item.setData(0, Qt.ItemDataRole.UserRole, client_id)
                 
-                # Adiciona os pets logo abaixo do tutor
                 for pet_info in data["pets"]:
                     pet_item = QTreeWidgetItem(tutor_item)
                     pet_item.setText(0, pet_info)
-                    pet_item.setFlags(pet_item.flags() & ~Qt.ItemFlag.ItemIsSelectable) # Pet é só informativo na lista
+                    pet_item.setFlags(pet_item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
 
-        self.tree.expandAll()
+            
+        root = self.tree.invisibleRootItem()
+        for i in range(root.childCount()):
+            letter_item = root.child(i)
+            letter_item.setExpanded(True)  
+
+            for j in range(letter_item.childCount()):
+                tutor_item = letter_item.child(j)
+                tutor_item.setExpanded(False)  
 
     def on_item_double_clicked(self, item, column):
-        # Verifica se o item clicado é um Tutor (ele tem o ID armazenado e tem um pai que é uma letra)
+        # Pega o ID armazenado no UserRole do item clicado
         client_id = item.data(0, Qt.ItemDataRole.UserRole)
         if client_id is not None:
-            # Emite o sinal informando qual ID de cliente foi aberto
-            self.client_selected.emit(client_id)
+            client_name = item.text(0)
+            
+            # Importa a aba de detalhes corretamente
+            from ui_client_detail import ClientDetailTab
+            
+            # Acessa o QTabWidget principal através da janela principal
+            main_window = self.window()
+            if hasattr(main_window, "tabs"):
+                detail_tab = ClientDetailTab(parent=main_window, db=self.db, client_id=client_id, main_window=main_window)
+                main_window.tabs.addTab(detail_tab, f"Tutor: {client_name}")
+                main_window.tabs.setCurrentWidget(detail_tab)

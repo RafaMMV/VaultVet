@@ -1,7 +1,9 @@
 from PyQt6.QtWidgets import (
     QWidget, QLineEdit, QComboBox, 
-    QFormLayout, QVBoxLayout, QPushButton, QHBoxLayout, QGroupBox
+    QFormLayout, QVBoxLayout, QPushButton, QHBoxLayout, QGroupBox,
+    QDialog, QLabel, QDialogButtonBox
 )
+from datetime import datetime
 
 class MainUI(QWidget):
     def __init__(self, parent=None):
@@ -17,6 +19,7 @@ class MainUI(QWidget):
 
         self.first_name_input = QLineEdit()
         self.first_name_input.editingFinished.connect(self.apply_name_formatting)
+        
         self.last_name_input = QLineEdit()
         self.last_name_input.editingFinished.connect(self.apply_name_formatting)
 
@@ -72,11 +75,20 @@ class MainUI(QWidget):
         patient_layout = QFormLayout(patient_group)
 
         self.pet_name_input = QLineEdit()
+        self.pet_name_input.editingFinished.connect(self.format_pet_name)
+
         self.species_input = QComboBox()
-        self.species_input.addItems(["Canino", "Felino", "Reptil", "Ave", "Outro"])
-        self.breed_input = QLineEdit()
+        self.species_input.addItems(["Canino", "Felino", "Réptil", "Ave", "Outro"])
+        self.species_input.currentIndexChanged.connect(self.on_species_changed)
+
+        self.breed_input = QComboBox()
+        self.breed_input.setEditable(True)
+        self.update_breeds("Canino")
+        self.breed_input.currentIndexChanged.connect(self.on_breed_changed)
+
         self.gender_input = QComboBox()
         self.gender_input.addItems(["Macho", "Fêmea"])
+        
         self.neutered_input = QComboBox()
         self.neutered_input.addItems(["Sim", "Não"])
         
@@ -116,7 +128,6 @@ class MainUI(QWidget):
     def format_cpf(self, text):
         digits = "".join([c for c in text if c.isdigit()])[:11]
         formatted = ""
-        
         if len(digits) > 9:
             formatted = f"{digits[:3]}.{digits[3:6]}.{digits[6:9]}-{digits[9:]}"
         elif len(digits) > 6:
@@ -133,7 +144,6 @@ class MainUI(QWidget):
     def format_rg(self, text):
         digits = "".join([c for c in text if c.isdigit()])[:9]
         formatted = ""
-        
         if len(digits) > 8:
             formatted = f"{digits[:2]}.{digits[2:5]}.{digits[5:8]}-{digits[8:]}"
         elif len(digits) > 5:
@@ -150,7 +160,6 @@ class MainUI(QWidget):
     def format_phone(self, text):
         digits = "".join([c for c in text if c.isdigit()])[:11]
         formatted = ""
-        
         if len(digits) > 10:
             formatted = f"({digits[:2]}) {digits[2:7]}-{digits[7:]}"
         elif len(digits) > 6:
@@ -167,35 +176,48 @@ class MainUI(QWidget):
             sender.blockSignals(False)
 
     def format_birth_date(self, text):
-        digits = "".join([c for c in text if c.isdigit()])[:8]
-        formatted = ""
-        
-        if len(digits) > 4:
-            formatted = f"{digits[:2]}/{digits[2:4]}/{digits[4:]}"
-        elif len(digits) > 2:
-            formatted = f"{digits[:2]}/{digits[2:]}"
-        else:
-            formatted = digits
+            digits = "".join([c for c in text if c.isdigit()])[:8]
+            formatted = ""
+            if len(digits) > 4:
+                formatted = f"{digits[:2]}/{digits[2:4]}/{digits[4:]}"
+            elif len(digits) > 2:
+                formatted = f"{digits[:2]}/{digits[2:]}"
+            else:
+                formatted = digits
 
-        self.birth_date_input.blockSignals(True)
-        self.birth_date_input.setText(formatted)
-        self.birth_date_input.blockSignals(False)
+            self.birth_date_input.blockSignals(True)
+            self.birth_date_input.setText(formatted)
+            self.birth_date_input.setCursorPosition(len(formatted))
+            self.birth_date_input.blockSignals(False)
+
+            # Dispara o cálculo automático quando completar os 8 dígitos (DD/MM/AAAA)
+            if len(digits) == 8:
+                calculated_age = self.calculate_age_from_date(formatted)
+                if calculated_age:
+                    self.age_input.setText(calculated_age)
 
     def format_proper_name(self, text):
-        """Formata o nome com iniciais maiúsculas, exceto preposições curtas."""
-        exceptions = {'de', 'da', 'do', 'dos', 'das', 'di', 'du', 'e'}
-        words = text.strip().split()
-        formatted_words = []
-        for i, word in enumerate(words):
-            w_lower = word.lower()
-            if i > 0 and w_lower in exceptions:
-                formatted_words.append(w_lower)
-            else:
-                formatted_words.append(word.capitalize())
-        return " ".join(formatted_words)
+            exceptions = {'de', 'da', 'do', 'dos', 'das', 'di', 'du', 'e'}
+            words = text.strip().split()
+            if not words:
+                return ""
+                
+            formatted_words = []
+            sender = self.sender()
+            
+            for i, word in enumerate(words):
+                w_lower = word.lower()
+                # Se for o campo de sobrenome (last_name_input) e a primeira palavra for preposição, mantém minúscula
+                if sender == getattr(self, 'last_name_input', None) and i == 0 and w_lower in exceptions:
+                    formatted_words.append(w_lower)
+                elif i > 0 and w_lower in exceptions:
+                    formatted_words.append(w_lower)
+                else:
+                    formatted_words.append(word.capitalize())
+                    
+            return " ".join(formatted_words)
 
     def apply_name_formatting(self):
-        """Aplica a formatação de nomes quando o usuário termina de digitar."""
         sender = self.sender()
         if sender:
             current_text = sender.text()
@@ -207,7 +229,6 @@ class MainUI(QWidget):
     def format_cep(self, text):
         digits = "".join([c for c in text if c.isdigit()])[:8]
         formatted = ""
-        
         if len(digits) > 5:
             formatted = f"{digits[:5]}-{digits[5:]}"
         else:
@@ -218,7 +239,6 @@ class MainUI(QWidget):
         self.zip_code_input.blockSignals(False)
 
     def fetch_cep_address(self):
-        """Busca o endereço automaticamente usando a API pública do ViaCEP."""
         import urllib.request
         import json
 
@@ -230,13 +250,113 @@ class MainUI(QWidget):
                 with urllib.request.urlopen(req, timeout=3) as response:
                     data = json.loads(response.read().decode())
                     if "erro" not in data:
-                        # Preenche o campo de endereço automaticamente
                         logradouro = data.get("logradouro", "")
                         bairro = data.get("bairro", "")
+                        cidade = data.get("localidade", "")
                         estado = data.get("uf", "")
-                        if bairro:
-                            self.address_input.setText(f"{logradouro} - {bairro}/{estado}")
-                        else:
-                            self.address_input.setText(logradouro)
+                        
+                        partes = [p for p in [logradouro, bairro, f"{cidade}/{estado}"] if p]
+                        endereco_completo = ", ".join(partes)
+                        self.address_input.setText(endereco_completo)
             except Exception as e:
                 print("Não foi possível buscar o CEP:", e)
+
+    def format_pet_name(self):
+        text = self.pet_name_input.text().strip()
+        if text:
+            formatted = text[0].upper() + text[1:]
+            self.pet_name_input.blockSignals(True)
+            self.pet_name_input.setText(formatted)
+            self.pet_name_input.blockSignals(False)
+
+    def update_breeds(self, species):
+        self.breed_input.clear()
+        if species == "Canino":
+            breeds = [
+                "SRD (Vira-lata)", "Shih Tzu", "Poodle", "Yorkshire Terrier", 
+                "Golden Retriever", "Labrador Retriever", "Bulldog Francês", 
+                "Pitbull", "Pastor Alemão", "Lhasa Apso", "Beagle", "Pug", 
+                "Spitz Alemão", "Border Collie", "Dachshund", "Outro..."
+            ]
+        elif species == "Felino":
+            breeds = [
+                "SRD (Gato de Rua)", "Persa", "Siamês", "Maine Coon", 
+                "Angorá", "British Shorthair", "Ragdoll", "Sphynx", 
+                "Azul Russo", "Scottish Fold", "Outro..."
+            ]
+        else:
+            breeds = ["Outro..."]
+        self.breed_input.addItems(breeds)
+
+    def on_species_changed(self, index):
+        species = self.species_input.currentText()
+        if species == "Outro":
+            custom_species = self.open_custom_popup("Cadastrar Outra Espécie", "Digite a espécie:")
+            if custom_species:
+                self.species_input.blockSignals(True)
+                self.species_input.insertItem(0, custom_species)
+                self.species_input.setCurrentIndex(0)
+                self.species_input.blockSignals(False)
+                self.update_breeds(custom_species)
+            else:
+                self.species_input.setCurrentIndex(0)
+        else:
+            self.update_breeds(species)
+
+    def on_breed_changed(self, index):
+        if self.breed_input.currentText() == "Outro...":
+            custom_breed = self.open_custom_popup("Cadastrar Outra Raça", "Digite a raça:")
+            if custom_breed:
+                self.breed_input.blockSignals(True)
+                self.breed_input.insertItem(0, custom_breed)
+                self.breed_input.setCurrentIndex(0)
+                self.breed_input.blockSignals(False)
+            else:
+                self.breed_input.setCurrentIndex(1)
+
+    def open_custom_popup(self, title, label_text):
+        dialog = QDialog(self)
+        dialog.setWindowTitle(title)
+        dialog.setFixedSize(300, 130)
+
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(QLabel(label_text))
+
+        line_edit = QLineEdit()
+        layout.addWidget(line_edit)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            return line_edit.text().strip()
+        return None
+    
+    def calculate_age_from_date(self, date_str):
+            try:
+                birth_date = datetime.strptime(date_str, "%d/%m/%Y")
+                today = datetime.now()
+                
+                years = today.year - birth_date.year
+                months = today.month - birth_date.month
+                
+                if today.day < birth_date.day:
+                    months -= 1
+                if months < 0:
+                    years -= 1
+                    months += 12
+                    
+                if years > 0 and months > 0:
+                    return f"{years} ano(s) e {months} mes(es)"
+                elif years > 0:
+                    return f"{years} ano(s)"
+                elif months > 0:
+                    return f"{months} mes(es)"
+                else:
+                    return "Menos de 1 mês"
+            except ValueError:
+                return ""
