@@ -77,6 +77,7 @@ class MainUI(QWidget):
         
         self.birth_date_input = QLineEdit()
         self.birth_date_input.setPlaceholderText("DD/MM/AAAA")
+        self.birth_date_input.textChanged.connect(self.format_birth_date)
         
         self.age_input = QLineEdit()
         self.age_input.setPlaceholderText("Ex: 3 anos e 2 meses")
@@ -159,3 +160,18 @@ class MainUI(QWidget):
             sender.blockSignals(True)
             sender.setText(formatted)
             sender.blockSignals(False)
+
+    def format_birth_date(self, text):
+        digits = "".join([c for c in text if c.isdigit()])[:8]
+        formatted = ""
+        
+        if len(digits) > 4:
+            formatted = f"{digits[:2]}/{digits[2:4]}/{digits[4:]}"
+        elif len(digits) > 2:
+            formatted = f"{digits[:2]}/{digits[2:]}"
+        else:
+            formatted = digits
+
+        self.birth_date_input.blockSignals(True)
+        self.birth_date_input.setText(formatted)
+        self.birth_date_input.blockSignals(False)
