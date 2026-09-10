@@ -16,7 +16,9 @@ class MainUI(QWidget):
         client_layout = QFormLayout(client_group)
 
         self.first_name_input = QLineEdit()
+        self.first_name_input.editingFinished.connect(self.apply_name_formatting)
         self.last_name_input = QLineEdit()
+        self.last_name_input.editingFinished.connect(self.apply_name_formatting)
 
         self.cpf_input = QLineEdit()
         self.cpf_input.setPlaceholderText("000.000.000-00")
@@ -35,6 +37,7 @@ class MainUI(QWidget):
         # Emergency contact fields
         self.emergency_name_input = QLineEdit()
         self.emergency_name_input.setPlaceholderText("Nome do contato de emergência")
+        self.emergency_name_input.editingFinished.connect(self.apply_name_formatting)
 
         self.emergency_phone_input = QLineEdit()
         self.emergency_phone_input.setPlaceholderText("(00) 00000-0000")
@@ -43,6 +46,8 @@ class MainUI(QWidget):
         # Address fields
         self.zip_code_input = QLineEdit()
         self.zip_code_input.setPlaceholderText("00000-000")
+        self.zip_code_input.textChanged.connect(self.format_cep)
+        self.zip_code_input.editingFinished.connect(self.fetch_cep_address)
 
         self.address_input = QLineEdit()  
         self.number_input = QLineEdit()   
@@ -175,3 +180,63 @@ class MainUI(QWidget):
         self.birth_date_input.blockSignals(True)
         self.birth_date_input.setText(formatted)
         self.birth_date_input.blockSignals(False)
+
+    def format_proper_name(self, text):
+        """Formata o nome com iniciais maiúsculas, exceto preposições curtas."""
+        exceptions = {'de', 'da', 'do', 'dos', 'das', 'di', 'du', 'e'}
+        words = text.strip().split()
+        formatted_words = []
+        for i, word in enumerate(words):
+            w_lower = word.lower()
+            if i > 0 and w_lower in exceptions:
+                formatted_words.append(w_lower)
+            else:
+                formatted_words.append(word.capitalize())
+        return " ".join(formatted_words)
+
+    def apply_name_formatting(self):
+        """Aplica a formatação de nomes quando o usuário termina de digitar."""
+        sender = self.sender()
+        if sender:
+            current_text = sender.text()
+            formatted = self.format_proper_name(current_text)
+            sender.blockSignals(True)
+            sender.setText(formatted)
+            sender.blockSignals(False)
+
+    def format_cep(self, text):
+        digits = "".join([c for c in text if c.isdigit()])[:8]
+        formatted = ""
+        
+        if len(digits) > 5:
+            formatted = f"{digits[:5]}-{digits[5:]}"
+        else:
+            formatted = digits
+
+        self.zip_code_input.blockSignals(True)
+        self.zip_code_input.setText(formatted)
+        self.zip_code_input.blockSignals(False)
+
+    def fetch_cep_address(self):
+        """Busca o endereço automaticamente usando a API pública do ViaCEP."""
+        import urllib.request
+        import json
+
+        cep_digits = "".join([c for c in self.zip_code_input.text() if c.isdigit()])
+        if len(cep_digits) == 8:
+            try:
+                url = f"https://viacep.com.br/ws/{cep_digits}/json/"
+                req = urllib.request.Request(url, headers={'User-Agent': 'VaultVetApp'})
+                with urllib.request.urlopen(req, timeout=3) as response:
+                    data = json.loads(response.read().decode())
+                    if "erro" not in data:
+                        # Preenche o campo de endereço automaticamente
+                        logradouro = data.get("logradouro", "")
+                        bairro = data.get("bairro", "")
+                        estado = data.get("uf", "")
+                        if bairro:
+                            self.address_input.setText(f"{logradouro} - {bairro}/{estado}")
+                        else:
+                            self.address_input.setText(logradouro)
+            except Exception as e:
+                print("Não foi possível buscar o CEP:", e)
