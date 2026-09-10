@@ -24,7 +24,7 @@ class Database:
     def create_tables(self):
         """Create essential system tables with detailed fields."""
         try:
-            # Clients (Tutors) table
+# Clients (Tutors) table with number and complement
             self.cursor.execute("""
                 CREATE TABLE IF NOT EXISTS clients (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -32,15 +32,18 @@ class Database:
                     last_name TEXT,
                     zip_code TEXT,
                     address TEXT,
+                    number TEXT,
+                    complement TEXT,
                     phone TEXT,
                     email TEXT,
                     emergency_contact TEXT,
+                    emergency_phone TEXT,
                     cpf TEXT,
                     rg TEXT
                 )
             """)
 
-            # Patients (Pets) table
+            # Patients (Pets) table with flexible age/birthdate support
             self.cursor.execute("""
                 CREATE TABLE IF NOT EXISTS patients (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -50,7 +53,8 @@ class Database:
                     neutered TEXT,
                     species TEXT,
                     breed TEXT,
-                    age INTEGER,
+                    birth_date TEXT,
+                    age TEXT,
                     weight REAL,
                     microchip TEXT,
                     FOREIGN KEY (client_id) REFERENCES clients (id)
