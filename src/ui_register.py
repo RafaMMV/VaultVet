@@ -1,9 +1,9 @@
+from datetime import datetime
 from PyQt6.QtWidgets import (
     QWidget, QLineEdit, QComboBox, 
     QFormLayout, QVBoxLayout, QPushButton, QHBoxLayout, QGroupBox,
-    QDialog, QLabel, QDialogButtonBox
+    QDialog, QLabel, QDialogButtonBox, QMessageBox
 )
-from datetime import datetime
 
 class RegisterTab(QDialog):  # Mudado de QWidget para QDialog
     def __init__(self, parent=None, db=None):
@@ -60,7 +60,7 @@ class RegisterTab(QDialog):  # Mudado de QWidget para QDialog
         self.complement_input = QLineEdit() 
         self.complement_input.setPlaceholderText("Ex: Apto 101, Bloco B")
 
-        client_layout.addRow("Nome:", self.first_name_input)
+        client_layout.addRow("Nome*:", self.first_name_input)
         client_layout.addRow("Sobrenome:", self.last_name_input)
         client_layout.addRow("CPF:", self.cpf_input)
         client_layout.addRow("RG:", self.rg_input)
@@ -105,7 +105,7 @@ class RegisterTab(QDialog):  # Mudado de QWidget para QDialog
         self.weight_input = QLineEdit()
         self.microchip_input = QLineEdit()
 
-        patient_layout.addRow("Nome do Pet:", self.pet_name_input)
+        patient_layout.addRow("Nome do Pet*:", self.pet_name_input)
         patient_layout.addRow("Espécie:", self.species_input)
         patient_layout.addRow("Raça:", self.breed_input)
         patient_layout.addRow("Sexo:", self.gender_input)
@@ -117,6 +117,8 @@ class RegisterTab(QDialog):  # Mudado de QWidget para QDialog
 
         self.save_button = QPushButton("Salvar Cadastro")
         self.save_button.setStyleSheet("font-weight: bold; padding: 8px;")
+        # Conecta o botão à função de salvar que faltava
+        self.save_button.clicked.connect(self.save_registration)
 
         left_side = QVBoxLayout()
         left_side.addWidget(client_group)
@@ -127,6 +129,87 @@ class RegisterTab(QDialog):  # Mudado de QWidget para QDialog
 
         main_layout.addLayout(left_side)
         main_layout.addLayout(right_side)
+
+    def save_registration(self):
+        if not self.db:
+            QMessageBox.critical(self, "Erro", "Conexão com o banco de dados não disponível.")
+            return
+
+        # Coleta e valida dados obrigatórios
+        first_name = self.first_name_input.text().strip()
+        pet_name = self.pet_name_input.text().strip()
+
+        if not first_name:
+            QMessageBox.warning(self, "Aviso", "O nome do tutor é obrigatório.")
+            self.first_name_input.setFocus()
+            return
+
+        if not pet_name:
+            QMessageBox.warning(self, "Aviso", "O nome do pet é obrigatório.")
+            self.pet_name_input.setFocus()
+            return
+
+        # Demais dados do tutor
+        last_name = self.last_name_input.text().strip()
+        cpf = self.cpf_input.text().strip()
+        rg = self.rg_input.text().strip()
+        phone = self.phone_input.text().strip()
+        email = self.email_input.text().strip()
+        emergency_name = self.emergency_name_input.text().strip()
+        emergency_phone = self.emergency_phone_input.text().strip()
+        zip_code = self.zip_code_input.text().strip()
+        address = self.address_input.text().strip()
+        number = self.number_input.text().strip()
+        complement = self.complement_input.text().strip()
+
+        # Demais dados do pet
+        species = self.species_input.currentText()
+        breed = self.breed_input.currentText()
+        gender = self.gender_input.currentText()
+        neutered = self.neutered_input.currentText()
+        birth_date = self.birth_date_input.text().strip()
+        age = self.age_input.text().strip()
+        microchip = self.microchip_input.text().strip()
+
+        # Tratamento seguro do peso (substitui vírgula por ponto para o banco REAL)
+        weight_text = self.weight_input.text().strip().replace(',', '.')
+        try:
+            weight = float(weight_text) if weight_text else 0.0
+        except ValueError:
+            weight = 0.0
+
+        try:
+            # 1. Insere o tutor na tabela clients
+            self.db.cursor.execute("""
+                INSERT INTO clients (
+                    first_name, last_name, zip_code, address, number, complement,
+                    phone, email, emergency_contact, emergency_phone, cpf, rg
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                first_name, last_name, zip_code, address, number, complement,
+                phone, email, emergency_name, emergency_phone, cpf, rg
+            ))
+            
+            # Pega o ID gerado para o cliente recém-cadastrado
+            client_id = self.db.cursor.lastrowid
+
+            # 2. Insere o pet vinculado ao ID do cliente na tabela patients
+            self.db.cursor.execute("""
+                INSERT INTO patients (
+                    client_id, pet_name, gender, neutered, species, 
+                    breed, birth_date, age, weight, microchip
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                client_id, pet_name, gender, neutered, species, 
+                breed, birth_date, age, weight, microchip
+            ))
+
+            self.db.conn.commit()
+            QMessageBox.information(self, "Sucesso", "Cadastro de cliente e pet realizado com sucesso!")
+            self.accept()  # Fecha a janela de diálogo com sucesso
+
+        except Exception as e:
+            QMessageBox.critical(self, "Erro", f"Não foi possível salvar o cadastro:\n{e}")
 
     def format_cpf(self, text):
         digits = "".join([c for c in text if c.isdigit()])[:11]
@@ -193,7 +276,6 @@ class RegisterTab(QDialog):  # Mudado de QWidget para QDialog
             self.birth_date_input.setCursorPosition(len(formatted))
             self.birth_date_input.blockSignals(False)
 
-            # Dispara o cálculo automático quando completar os 8 dígitos (DD/MM/AAAA)
             if len(digits) == 8:
                 calculated_age = self.calculate_age_from_date(formatted)
                 if calculated_age:
@@ -210,7 +292,6 @@ class RegisterTab(QDialog):  # Mudado de QWidget para QDialog
             
             for i, word in enumerate(words):
                 w_lower = word.lower()
-                # Se for o campo de sobrenome (last_name_input) e a primeira palavra for preposição, mantém minúscula
                 if sender == getattr(self, 'last_name_input', None) and i == 0 and w_lower in exceptions:
                     formatted_words.append(w_lower)
                 elif i > 0 and w_lower in exceptions:
@@ -363,4 +444,3 @@ class RegisterTab(QDialog):  # Mudado de QWidget para QDialog
                     return "Menos de 1 mês"
             except ValueError:
                 return ""
-

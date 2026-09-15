@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QMainWindow, QTabWidget, QWidget, QVBoxLayout, QLabel, QMessageBox
+from PyQt6.QtWidgets import QMainWindow, QTabBar, QTabWidget, QWidget, QVBoxLayout, QLabel, QMessageBox
 from ui_client_list import ClientListUI
 
 class MainUI(QMainWindow):
@@ -35,6 +35,9 @@ class MainUI(QMainWindow):
         self.tabs.addTab(self.home_tab, "Início")
         self.tabs.addTab(self.client_list_ui, "Lista de Clientes")
         self.tabs.addTab(self.consultation_tab, "Consulta") 
+
+        for i in range(3):
+            self.tabs.tabBar().setTabButton(i, QTabBar.ButtonPosition.RightSide, None)
 
         # Carrega os dados na lista de clientes ao iniciar
         self.client_list_ui.load_data()
