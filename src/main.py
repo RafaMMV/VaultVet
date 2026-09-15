@@ -12,6 +12,7 @@ class AppController:
         
         # Conecta o botão de salvar que está dentro da aba de cadastro
         self.window.register_topic_or_button = getattr(self.window, 'register_tab', None)
+        
         if hasattr(self.window, 'register_tab') and hasattr(self.window.register_tab, 'save_button'):
             self.window.register_tab.save_button.clicked.connect(self.handle_save)
 

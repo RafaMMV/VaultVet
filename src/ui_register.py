@@ -5,10 +5,12 @@ from PyQt6.QtWidgets import (
 )
 from datetime import datetime
 
-class RegisterTab(QWidget):
+class RegisterTab(QDialog):  # Mudado de QWidget para QDialog
     def __init__(self, parent=None, db=None):
         super().__init__(parent)
         self.db = db
+        self.setWindowTitle("Novo Cadastro de Cliente e Pet")
+        self.setMinimumSize(700, 500)
         self.init_ui()
 
     def init_ui(self):

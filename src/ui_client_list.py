@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QTreeWidget, 
-    QTreeWidgetItem, QMessageBox
+    QTreeWidgetItem, QMessageBox, QHBoxLayout, QPushButton, QDialog
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 
@@ -15,6 +15,18 @@ class ClientListUI(QWidget):
 
     def init_ui(self):
         main_layout = QVBoxLayout(self)
+
+        # --- Criação de um topo com botão de Ação ---
+        top_layout = QHBoxLayout()
+        self.btn_novo_cadastro = QPushButton("+ Novo Cadastro")
+        self.btn_novo_cadastro.setStyleSheet("font-weight: bold; padding: 6px;")
+        # Conecta o clique do botão à função que troca de aba
+        self.btn_novo_cadastro.clicked.connect(self.ir_para_cadastro)
+        
+        top_layout.addWidget(self.btn_novo_cadastro)
+        top_layout.addStretch() # Joga o botão para a esquerda
+        
+        main_layout.addLayout(top_layout)
 
         # Usamos QTreeWidget para a listagem em árvore
         self.tree = QTreeWidget()
@@ -128,3 +140,13 @@ class ClientListUI(QWidget):
                 )
                 main_window.tabs.addTab(detail_tab, f"Tutor: {client_name}")
                 main_window.tabs.setCurrentWidget(detail_tab)
+
+    def ir_para_cadastro(self):
+        from ui_register import RegisterTab
+        
+        # Cria a janela de cadastro como um diálogo flutuante (modal)
+        dialog = RegisterTab(parent=self, db=self.db)
+        
+        # Se o usuário salvar com sucesso, recarrega a lista de clientes por trás
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.load_data()

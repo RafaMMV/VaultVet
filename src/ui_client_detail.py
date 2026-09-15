@@ -17,6 +17,7 @@ class ClientDetailTab(QWidget):
         
         self.current_selected_pet_id = None 
         self._is_loading = False 
+        self._is_modified_flag = False  # Flag interna de alterações
         
         self.init_ui()
         self.load_client_data()
@@ -153,7 +154,6 @@ class ClientDetailTab(QWidget):
         self.save_pet_button = QPushButton("Salvar Alterações / Cadastrar Pet")
         self.save_pet_button.setStyleSheet("font-weight: bold; padding: 6px;")
         
-        # Proteção contra conexões duplicadas
         try:
             self.save_pet_button.clicked.disconnect()
         except TypeError:
@@ -202,7 +202,6 @@ class ClientDetailTab(QWidget):
             self.pets_list_widget.addItem(item)
 
     def auto_select_pet(self, pet_id):
-        """Varre a lista de pets da aba e abre a ficha do pet correspondente automaticamente"""
         for i in range(self.pets_list_widget.count()):
             item = self.pets_list_widget.item(i)
             pet_data = item.data(Qt.ItemDataRole.UserRole)
@@ -254,7 +253,7 @@ class ClientDetailTab(QWidget):
                 self.db.conn.commit()
                 QMessageBox.information(self, "Sucesso", "Alterações do pet salvas com sucesso!")
 
-            self.has_unsaved_changes = False
+            self._is_modified_flag = False
             self.load_pets_list()
             
             if hasattr(self.main_window, "client_list_ui"):
@@ -264,6 +263,15 @@ class ClientDetailTab(QWidget):
             QMessageBox.critical(self, "Erro", f"Não foi possível salvar o pet: {e}")
 
     def connect_change_trackers(self):
+        tutor_inputs = [
+            self.first_name_input, self.last_name_input, self.zip_code_input,
+            self.address_input, self.number_input, self.complement_input,
+            self.phone_input, self.email_input, self.emergency_name_input,
+            self.emergency_phone_input, self.cpf_input, self.rg_input
+        ]
+        for field in tutor_inputs:
+            field.textChanged.connect(self.mark_as_modified)
+
         self.pet_name_input.textChanged.connect(self.mark_as_modified)
         self.species_input.currentIndexChanged.connect(self.mark_as_modified)
         self.breed_input.currentIndexChanged.connect(self.mark_as_modified)
@@ -273,14 +281,17 @@ class ClientDetailTab(QWidget):
         self.age_input.textChanged.connect(self.mark_as_modified)
         self.weight_input.textChanged.connect(self.mark_as_modified)
         self.microchip_input.textChanged.connect(self.mark_as_modified)
-        self.has_unsaved_changes = False
 
     def mark_as_modified(self):
         if not self._is_loading:
-            self.has_unsaved_changes = True
+            self._is_modified_flag = True
+
+    # Método oficial chamado pelo ui_main.py
+    def has_unsaved_changes(self):
+        return self._is_modified_flag
 
     def check_unsaved_changes(self):
-        if getattr(self, "has_unsaved_changes", False):
+        if self.has_unsaved_changes():
             reply = QMessageBox.question(
                 self, "Alterações Não Salvas",
                 "Você possui alterações não salvas ou está preenchendo um novo pet. Deseja descartar?",
@@ -337,7 +348,7 @@ class ClientDetailTab(QWidget):
             
         self.microchip_input.setText(str(pet[10] or ""))
         
-        self.has_unsaved_changes = False
+        self._is_modified_flag = False
         self._is_loading = False
         self.patient_group.show()
 
@@ -359,7 +370,7 @@ class ClientDetailTab(QWidget):
         self.weight_input.clear()
         self.microchip_input.clear()
         
-        self.has_unsaved_changes = False
+        self._is_modified_flag = False
         self._is_loading = False
         self.patient_group.show()
 
@@ -458,9 +469,6 @@ class ClientDetailTab(QWidget):
             if calculated_age:
                 self.age_input.setText(calculated_age)
 
-        if not self._is_loading:
-            self.has_unsaved_changes = True
-
     def calculate_age_from_date(self, date_str):
         try:
             birth_date = datetime.strptime(date_str, "%d/%m/%Y")
@@ -513,6 +521,9 @@ class ClientDetailTab(QWidget):
                 WHERE id = ?
             """, updated_data)
             self.db.conn.commit()
+            
+            self._is_modified_flag = False  # Reseta a flag após salvar o tutor
+            
             QMessageBox.information(self, "Sucesso", "Alterações do tutor salvas com sucesso!")
             if hasattr(self.main_window, "client_list_ui"):
                 self.main_window.client_list_ui.load_data()
