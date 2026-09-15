@@ -1,85 +1,67 @@
 import sys
-from PyQt6.QtWidgets import QApplication, QMainWindow, QTabWidget
+from PyQt6.QtWidgets import QApplication
 from database import Database
 from ui_main import MainUI
-from ui_client_list import ClientListUI
 
-class MainWindow(QMainWindow):
+class AppController:
     def __init__(self):
-        super().__init__()
-        self.setWindowTitle("VaultVet - Veterinary Management System")
-        self.setMinimumSize(1000, 650)
-
         self.db = Database()
         
-        # Tab system to switch between Registration and Listing
-        self.tabs = QTabWidget()
-        self.setCentralWidget(self.tabs)
+        # Inicializa a janela principal unificada (MainUI)
+        self.window = MainUI(db=self.db)
+        
+        # Conecta o botão de salvar que está dentro da aba de cadastro
+        self.window.register_topic_or_button = getattr(self.window, 'register_tab', None)
+        if hasattr(self.window, 'register_tab') and hasattr(self.window.register_tab, 'save_button'):
+            self.window.register_tab.save_button.clicked.connect(self.handle_save)
 
-        # Instantiate screens passing the database
-        self.main_ui = MainUI(self)
-        self.client_list_ui = ClientListUI(self, self.db)
-
-        # Add tabs to the main window
-        self.tabs.addTab(self.main_ui, "Cadastro")
-        self.tabs.addTab(self.client_list_ui, "Lista de Clientes")
-
-        # Load previously saved data into the table on app startup
-        self.client_list_ui.load_data()
-
-        # Connect the form's save button
-        self.main_ui.save_button.clicked.connect(self.handle_save)
+        self.window.show()
 
     def handle_save(self):
-        # Collect Tutor data filled in the form
+        # Coleta os dados do Tutor
         client_data = (
-            self.main_ui.first_name_input.text(),
-            self.main_ui.last_name_input.text(),
-            self.main_ui.zip_code_input.text(),
-            self.main_ui.address_input.text(),
-            self.main_ui.number_input.text(),
-            self.main_ui.complement_input.text(),
-            self.main_ui.phone_input.text(),
-            self.main_ui.email_input.text(),
-            self.main_ui.emergency_name_input.text(),
-            self.main_ui.emergency_phone_input.text(),
-            self.main_ui.cpf_input.text(),
-            self.main_ui.rg_input.text()
+            self.window.register_tab.first_name_input.text(),
+            self.window.register_tab.last_name_input.text(),
+            self.window.register_tab.zip_code_input.text(),
+            self.window.register_tab.address_input.text(),
+            self.window.register_tab.number_input.text(),
+            self.window.register_tab.complement_input.text(),
+            self.window.register_tab.phone_input.text(),
+            self.window.register_tab.email_input.text(),
+            self.window.register_tab.emergency_name_input.text(),
+            self.window.register_tab.emergency_phone_input.text(),
+            self.window.register_tab.cpf_input.text(),
+            self.window.register_tab.rg_input.text()
         )
 
-        # Collect Pet data filled in the form
-        weight_text = self.main_ui.weight_input.text().lower().replace("kg", "").replace("g", "").strip()
+        # Coleta os dados do Pet
+        weight_text = self.window.register_tab.weight_input.text().lower().replace("kg", "").replace("g", "").strip()
         weight_converted = float(weight_text) if weight_text else 0.0
 
         pet_data = (
-            self.main_ui.pet_name_input.text(),
-            self.main_ui.gender_input.currentText(),
-            self.main_ui.neutered_input.currentText(),
-            self.main_ui.species_input.currentText(),
-            self.main_ui.breed_input.currentText(),
-            self.main_ui.birth_date_input.text(),
-            self.main_ui.age_input.text(),
+            self.window.register_tab.pet_name_input.text(),
+            self.window.register_tab.gender_input.currentText(),
+            self.window.register_tab.neutered_input.currentText(),
+            self.window.register_tab.species_input.currentText(),
+            self.window.register_tab.breed_input.currentText(),
+            self.window.register_tab.birth_date_input.text(),
+            self.window.register_tab.age_input.text(),
             weight_converted,
-            self.main_ui.microchip_input.text()
+            self.window.register_tab.microchip_input.text()
         )
 
         try:
-            # Save to the SQLite database using our function
             self.db.insert_client_and_pet(client_data, pet_data)
             
-            # Update the other tab's table and switch to it automatically
-            self.client_list_ui.load_data()
-            self.tabs.setCurrentIndex(1)
-            
+            # Atualiza a lista e muda para a aba de listagem automaticamente
+            if hasattr(self.window, "client_list_ui"):
+                self.window.client_list_ui.load_data()
+                self.window.tabs.setCurrentWidget(self.window.client_list_ui)
+                
         except Exception as e:
             print("Error saving registration:", e)
 
-    def closeEvent(self, event):
-        self.db.close()
-        event.accept()
-
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    window = MainWindow()
-    window.show()
+    controller = AppController()
     sys.exit(app.exec())
