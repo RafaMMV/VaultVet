@@ -60,6 +60,15 @@ class Database:
                     FOREIGN KEY (client_id) REFERENCES clients (id)
                 )
             """)
+
+            self.cursor.execute("""
+                CREATE TABLE IF NOT EXISTS appointments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    date TEXT NOT NULL,       -- Formato "YYYY-MM-DD"
+                    time TEXT NOT NULL,       -- Formato "HH:MM" (aceita 13:00, 13:15, etc.)
+                    description TEXT NOT NULL -- Descrição do pet/tutor/procedimento
+                )
+            """)
             
             self.conn.commit()
             print("Tables verified/created successfully with full attributes.")

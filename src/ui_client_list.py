@@ -143,10 +143,8 @@ class ClientListUI(QWidget):
 
     def ir_para_cadastro(self):
         from ui_register import RegisterTab
-        
-        # Cria a janela de cadastro como um diálogo flutuante (modal)
+
         dialog = RegisterTab(parent=self, db=self.db)
-        
-        # Se o usuário salvar com sucesso, recarrega a lista de clientes por trás
+
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.load_data()

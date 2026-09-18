@@ -1,5 +1,7 @@
 from PyQt6.QtWidgets import QMainWindow, QTabBar, QTabWidget, QWidget, QVBoxLayout, QLabel, QMessageBox
 from ui_client_list import ClientListUI
+from ui_agenda import AgendaTab
+from PyQt6.QtGui import QIcon
 
 class MainUI(QMainWindow):
     def __init__(self, db=None):
@@ -7,49 +9,57 @@ class MainUI(QMainWindow):
         self.db = db
         self.setWindowTitle("VaultVet - Veterinary Management System")
         self.setMinimumSize(1000, 650)
+        self.setWindowIcon(QIcon("../assets/logo_VaultVet.png"))  
         
         self.init_ui()
 
     def init_ui(self):
-        # Único gerenciador de abas da janela principal
         self.tabs = QTabWidget()
         self.setCentralWidget(self.tabs)
 
-        # HABILITA O "X" NAS ABAS
         self.tabs.setTabsClosable(True)
         self.tabs.tabCloseRequested.connect(self.close_tab)
 
-        # 1. Aba Início (Home)
+        # 1. Aba Início
         self.home_tab = QWidget()
         home_layout = QVBoxLayout(self.home_tab)
+        home_layout.addWidget(QLabel("Início - Em desenvolvimento"))
 
-        # 2. Aba de Lista de Clientes
+        # 2. Aba Clientes
         self.client_list_ui = ClientListUI(parent=self, db=self.db)
 
-        # 3. Aba de Consulta
-        self.consultation_tab = QWidget()
-        consultation_layout = QVBoxLayout(self.consultation_tab)
-        consultation_layout.addWidget(QLabel("Consulta - Em desenvolvimento"))
+        # 3. Aba Agendamento
+        self.agenda_tab = AgendaTab(parent=self, db=self.db)
 
-        # Adiciona as três abas em uma única barra superior
+        # 4. Aba Estoque
+        self.inventory_tab = QWidget()  
+        inventory_layout = QVBoxLayout(self.inventory_tab)
+        inventory_layout.addWidget(QLabel("Estoque - Em desenvolvimento"))
+
+        # 5. Aba Caixa
+        self.cash_flow_tab = QWidget()
+        cash_flow_layout = QVBoxLayout(self.cash_flow_tab)
+        cash_flow_layout.addWidget(QLabel("Caixa - Em desenvolvimento"))
+
+        # Embojuapy porã umi aba tapére héraporãitépe
         self.tabs.addTab(self.home_tab, "Início")
-        self.tabs.addTab(self.client_list_ui, "Lista de Clientes")
-        self.tabs.addTab(self.consultation_tab, "Consulta") 
+        self.tabs.addTab(self.client_list_ui, "Clientes")
+        self.tabs.addTab(self.agenda_tab, "Agendamento")  
+        self.tabs.addTab(self.inventory_tab, "Estoque")
+        self.tabs.addTab(self.cash_flow_tab, "Caixa") 
 
-        for i in range(3):
+        # Eipe'a "X" umi 5 aba guasupegua ani hag̃ua ojepe'a
+        for i in range(5):
             self.tabs.tabBar().setTabButton(i, QTabBar.ButtonPosition.RightSide, None)
 
-        # Carrega os dados na lista de clientes ao iniciar
         self.client_list_ui.load_data()
 
     def close_tab(self, index):
         widget = self.tabs.widget(index)
         
-        # Bloqueia o fechamento das abas principais fixas
-        if widget in [self.home_tab, self.client_list_ui, self.consultation_tab]:
+        if widget in [self.home_tab, self.client_list_ui, self.agenda_tab, self.inventory_tab, self.cash_flow_tab]:
             return
 
-        # Para as abas de clientes (ClientDetailTab), faz a checagem de alterações
         if hasattr(widget, "has_unsaved_changes") and widget.has_unsaved_changes():
             resposta = QMessageBox.question(
                 self,
