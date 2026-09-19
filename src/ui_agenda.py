@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (
     QListWidgetItem, QMenu, QComboBox, QCompleter
 )
 from PyQt6.QtCore import QDate, Qt
-from PyQt6.QtGui import QAction
+from PyQt6.QtGui import QAction, QKeyEvent
 
 class AgendaItemWidget(QWidget):
     """Widget personalizado para cada linha da lista, exibindo o nome limpo e o menu de três pontinhos."""
@@ -22,14 +22,12 @@ class AgendaItemWidget(QWidget):
         else:
             nome_limpo = client
 
-        # Formato limpo na lista: 14:30 — Rafael Miguel - Theo (Consulta)
         texto_formatado = f"<b>{hora}</b> — {nome_limpo} - {pet} ({service})"
         self.lbl_info = QLabel(texto_formatado)
         layout.addWidget(self.lbl_info)
 
         layout.addStretch()
 
-        # Botão de três pontinhos (...)
         self.btn_menu = QPushButton("⋮")
         self.btn_menu.setFixedSize(30, 25)
         self.btn_menu.setStyleSheet("font-weight: bold; font-size: 14px;")
@@ -50,6 +48,47 @@ class AgendaItemWidget(QWidget):
 
     def chamar_exclusao(self):
         self.parent_agenda.excluir_horario(self.reg_id)
+
+
+class AutoCompleteComboBox(QComboBox):
+    """ComboBox personalizado que força a seleção da primeira sugestão ao apertar Tab ou sair do campo."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setEditable(True)
+        self.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+
+    def keyPressEvent(self, event: QKeyEvent):
+        if event.key() in (Qt.Key.Key_Tab, Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            completer = self.completer()
+            if completer and completer.popup().isVisible():
+                # Pega o primeiro item da lista suspensa sugerida
+                currentIndex = completer.currentIndex()
+                if not currentIndex.isValid():
+                    currentIndex = completer.model().index(0, 0)
+                
+                if currentIndex.isValid():
+                    texto_sugerido = completer.model().data(currentIndex, Qt.ItemDataRole.DisplayRole)
+                    if texto_sugerido:
+                        self.setEditText(texto_sugerido)
+                        completer.popup().hide()
+                        event.accept()
+                        super().keyPressEvent(event)
+                        return
+        super().keyPressEvent(event)
+
+    def focusOutEvent(self, event):
+        # Quando o usuário clica fora ou pula com Tab, completa com o texto correspondente se houver correspondência exata parcial
+        texto_atual = self.currentText().strip()
+        completer = self.completer()
+        if completer and texto_atual:
+            model = completer.model()
+            for i in range(model.rowCount()):
+                item_texto = model.data(model.index(i, 0), Qt.ItemDataRole.DisplayRole)
+                if item_texto.lower().startswith(texto_atual.lower()):
+                    self.setEditText(item_texto)
+                    break
+        super().focusOutEvent(event)
+
 
 class AgendaTab(QWidget):
     def __init__(self, parent=None, db=None):
@@ -104,28 +143,23 @@ class AgendaTab(QWidget):
         hora_layout.addWidget(self.combo_minuto)
         form_layout.addLayout(hora_layout)
 
-        # 2. Tutor / Cliente (ComboBox Editável com lista completa e filtro fluido)
+        # 2. Tutor / Cliente (Usando nosso componente inteligente AutoCompleteComboBox)
         form_layout.addWidget(QLabel("Tutor / Cliente:"))
-        self.combo_client = QComboBox()
-        self.combo_client.setEditable(True)
-        self.combo_client.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self.combo_client = AutoCompleteComboBox()
         form_layout.addWidget(self.combo_client)
 
-        # 3. Paciente / Pet (ComboBox Editável)
+        # 3. Paciente / Pet (Também usando o componente inteligente)
         form_layout.addWidget(QLabel("Paciente (Pet):"))
-        self.combo_pet = QComboBox()
-        self.combo_pet.setEditable(True)
-        self.combo_pet.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self.combo_pet = AutoCompleteComboBox()
         form_layout.addWidget(self.combo_pet)
 
-        # Conecta a mudança do tutor para atualizar automaticamente a lista de pets dele
+        # Conecta a mudança do tutor para atualizar automaticamente os pets dele
         self.combo_client.currentTextChanged.connect(self.atualizar_pets_por_cliente)
 
         # 4. Tipo de Atendimento (Consulta, Vacina, Retorno)
         form_layout.addWidget(QLabel("Tipo de Atendimento:"))
-        self.combo_service = QComboBox()
+        self.combo_service = AutoCompleteComboBox()
         self.combo_service.addItems(["Consulta", "Vacina", "Retorno"])
-        self.combo_service.setEditable(True)
         form_layout.addWidget(self.combo_service)
 
         right_layout.addLayout(form_layout)
@@ -138,12 +172,12 @@ class AgendaTab(QWidget):
 
         main_layout.addLayout(right_layout, stretch=1)
 
-        # Carrega os clientes do banco e a agenda do dia
+        # Carrega os dados iniciais
         self.carregar_dados_clientes()
         self.carregar_horarios_do_dia(self.calendar.selectedDate())
 
     def carregar_dados_clientes(self):
-        """Puxa todos os tutores cadastrados no banco aplicando filtro e listagem suspensa limpa."""
+        """Puxa todos os tutores cadastrados e ativa o autocompletar flutuante."""
         if not self.db:
             return
 
@@ -159,19 +193,22 @@ class AgendaTab(QWidget):
             self.combo_client.setCurrentIndex(-1)
             self.combo_client.blockSignals(False)
 
-            # Configura o QCompleter para filtrar sem apagar o texto digitado
-            completer = QCompleter(nomes_clientes, self)
+            # Configuração correta do QCompleter
+            completer = QCompleter(nomes_clientes, self.combo_client)
             completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
             completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
             completer.setFilterMode(Qt.MatchFlag.MatchContains)
             self.combo_client.setCompleter(completer)
             
+            completer.activated.connect(lambda text: self.combo_client.setEditText(text))
+            
         except Exception as e:
             print(f"Erro ao carregar clientes para a agenda: {e}")
 
     def atualizar_pets_por_cliente(self, texto_digitado):
-        """Filtra os pets automaticamente com base no tutor completo e seleciona o primeiro por padrão."""
+        """Filtra os pets automaticamente com base no tutor selecionado ou digitado."""
         if not self.db or not texto_digitado:
+            self.combo_pet.clear()
             return
 
         try:
@@ -180,36 +217,36 @@ class AgendaTab(QWidget):
             
             nome_limpo = texto_digitado.strip()
 
-            # Busca o cliente comparando o nome completo (suporta nomes compostos perfeitamente)
             self.db.cursor.execute(
                 "SELECT id FROM clients WHERE (first_name || ' ' || COALESCE(last_name, '')) LIKE ?", 
                 (f"%{nome_limpo}%",)
             )
-                
             res = self.db.cursor.fetchone()
+            
             if res:
                 client_id = res[0]
                 pets = self.db.get_pets_by_client_id(client_id)
-                nomes_pets = [pet[2] for pet in pets] # pet[2] é o pet_name
+                nomes_pets = [pet[2] for pet in pets]
                 
                 self.combo_pet.addItems(nomes_pets)
 
-                # Seleciona automaticamente o primeiro pet da lista do tutor
                 if nomes_pets:
                     self.combo_pet.setCurrentIndex(0)
                 else:
                     self.combo_pet.setCurrentIndex(-1)
                     self.combo_pet.clearEditText()
 
-                completer_pet = QCompleter(nomes_pets, self)
+                completer_pet = QCompleter(nomes_pets, self.combo_pet)
                 completer_pet.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
                 completer_pet.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
                 completer_pet.setFilterMode(Qt.MatchFlag.MatchContains)
                 self.combo_pet.setCompleter(completer_pet)
-                
+                completer_pet.activated.connect(lambda text: self.combo_pet.setEditText(text))
+            
             self.combo_pet.blockSignals(False)
         except Exception as e:
             print(f"Erro ao atualizar pets do cliente: {e}")
+            self.combo_pet.blockSignals(False)
 
     def carregar_horarios_do_dia(self, date: QDate):
         data_str = date.toString("yyyy-MM-dd")
@@ -302,6 +339,7 @@ class AgendaTab(QWidget):
                     self.combo_minuto.setEditText(m_part)
                 
                 self.combo_client.setEditText(client)
+                self.atualizar_pets_por_cliente(client)
                 self.combo_pet.setEditText(pet)
                 self.combo_service.setEditText(service)
                 

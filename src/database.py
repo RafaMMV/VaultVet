@@ -64,18 +64,109 @@ class Database:
             self.cursor.execute("""
                 CREATE TABLE IF NOT EXISTS appointments (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    date TEXT NOT NULL,         -- Formato "YYYY-MM-DD"
-                    time TEXT NOT NULL,         -- Formato "HH:MM"
+                    date TEXT NOT NULL,        -- Formato "YYYY-MM-DD"
+                    time TEXT NOT NULL,        -- Formato "HH:MM"
                     client_name TEXT NOT NULL,  -- Nome do Tutor
                     pet_name TEXT NOT NULL,     -- Nome do Pet
                     service_type TEXT NOT NULL  -- Ex: Consulta, Vacina, Retorno
                 )
             """)
-            
+
+            self.cursor.execute("""
+                CREATE TABLE IF NOT EXISTS consultation_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    pet_id INTEGER,
+                    client_id INTEGER,
+                    date TEXT NOT NULL,
+                    notes TEXT,
+                    FOREIGN KEY (pet_id) REFERENCES patients (id),
+                    FOREIGN KEY (client_id) REFERENCES clients (id)
+                )
+            """)
+                        
             self.conn.commit()
             print("Tables verified/created successfully with full attributes.")
         except sqlite3.Error as e:
             print(f"Error creating tables: {e}")
+
+    def salvar_historico(self, pet_id, client_id, date, notes):
+        """Salva um novo registro no histórico do pet."""
+        try:
+            self.cursor.execute("""
+                INSERT INTO consultation_history (pet_id, client_id, date, notes)
+                VALUES (?, ?, ?, ?)
+            """, (pet_id, client_id, date, notes))
+            self.conn.commit()
+            print("Histórico salvo com sucesso!")
+        except sqlite3.Error as e:
+            print(f"Erro ao salvar histórico: {e}")
+            self.conn.rollback()
+
+    def get_historico_by_pet_id(self, pet_id):
+        """Busca todo o histórico de atendimentos de um pet específico."""
+        try:
+            self.cursor.execute("""
+                SELECT date, notes FROM consultation_history 
+                WHERE pet_id = ? 
+                ORDER BY id DESC
+            """, (pet_id,))
+            return self.cursor.fetchall()
+        except sqlite3.Error as e:
+            print(f"Erro ao buscar histórico: {e}")
+            return []
+
+    def get_ultimo_historico_by_pet_id(self, pet_id):
+        """Busca apenas o último atendimento anterior do pet."""
+        try:
+            self.cursor.execute("""
+                SELECT date, notes FROM consultation_history 
+                WHERE pet_id = ? 
+                ORDER BY id DESC 
+                LIMIT 1
+            """, (pet_id,))
+            return self.cursor.fetchone() 
+        except sqlite3.Error as e:
+            print(f"Erro ao buscar último histórico: {e}")
+            return None
+
+    def get_ultimo_historico_anterior(self, pet_id, data_referencia):
+        """Busca o atendimento mais recente estritamente anterior à data selecionada no calendário."""
+        try:
+            self.cursor.execute("""
+                SELECT id, date, notes FROM consultation_history 
+                WHERE pet_id = ? AND date < ? 
+                ORDER BY date DESC, id DESC 
+                LIMIT 1
+            """, (pet_id, data_referencia))
+            return self.cursor.fetchone()
+        except sqlite3.Error as e:
+            print(f"Erro ao buscar histórico anterior por data: {e}")
+            return None
+
+    def get_historico_do_dia(self, pet_id, data_atual):
+        """Busca se já existe um atendimento salvo exatamente para o dia atual."""
+        try:
+            self.cursor.execute("""
+                SELECT id, notes FROM consultation_history 
+                WHERE pet_id = ? AND date = ?
+                LIMIT 1
+            """, (pet_id, data_atual))
+            return self.cursor.fetchone()
+        except sqlite3.Error as e:
+            print(f"Erro ao buscar histórico do dia: {e}")
+            return None
+
+    def atualizar_historico(self, historico_id, notes):
+        """Atualiza o texto de um atendimento já salvo."""
+        try:
+            self.cursor.execute("""
+                UPDATE consultation_history SET notes = ? WHERE id = ?
+            """, (notes, historico_id))
+            self.conn.commit()
+            print("Histórico atualizado com sucesso!")
+        except sqlite3.Error as e:
+            print(f"Erro ao atualizar histórico: {e}")
+            self.conn.rollback()
 
     def insert_client_and_pet(self, client_data, pet_data):
         """Insere um novo tutor e o pet vinculado a ele no banco de dados."""
@@ -184,6 +275,16 @@ class Database:
             print("Cliente e pets removidos com sucesso!")
         except sqlite3.Error as e:
             print(f"Erro ao remover cliente: {e}")
+            self.conn.rollback()
+
+    def deletar_historico_por_id(self, historico_id):
+        """Exclui um registro do histórico pelo ID."""
+        try:
+            self.cursor.execute("DELETE FROM consultation_history WHERE id = ?", (historico_id,))
+            self.conn.commit()
+            print("Histórico apagado do banco com sucesso!")
+        except sqlite3.Error as e:
+            print(f"Erro ao apagar histórico: {e}")
             self.conn.rollback()
 
     def close(self):
