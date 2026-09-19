@@ -1,14 +1,14 @@
 from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QCalendarWidget, 
-    QListWidget, QPushButton, QLabel, QLineEdit, QMessageBox, 
+    QListWidget, QPushButton, QLabel, QMessageBox, 
     QListWidgetItem, QMenu, QComboBox, QCompleter
 )
 from PyQt6.QtCore import QDate, Qt
 from PyQt6.QtGui import QAction
 
 class AgendaItemWidget(QWidget):
-    """Widget personalizado para cada linha da lista, contendo o horário, descrição e o menu de três pontinhos."""
-    def __init__(self, reg_id, hora, descricao, parent_agenda):
+    """Widget personalizado para cada linha da lista, exibindo o nome limpo e o menu de três pontinhos."""
+    def __init__(self, reg_id, hora, client, pet, service, parent_agenda):
         super().__init__()
         self.reg_id = reg_id
         self.parent_agenda = parent_agenda
@@ -16,8 +16,15 @@ class AgendaItemWidget(QWidget):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(5, 2, 5, 2)
 
-        # Texto do horário e descrição do agendamento
-        self.lbl_info = QLabel(f"<b>{hora}</b> - {descricao}")
+        partes_nome = client.split()
+        if len(partes_nome) >= 2:
+            nome_limpo = f"{partes_nome[0]} {partes_nome[1]}"
+        else:
+            nome_limpo = client
+
+        # Formato limpo na lista: 14:30 — Rafael Miguel - Theo (Consulta)
+        texto_formatado = f"<b>{hora}</b> — {nome_limpo} - {pet} ({service})"
+        self.lbl_info = QLabel(texto_formatado)
         layout.addWidget(self.lbl_info)
 
         layout.addStretch()
@@ -27,27 +34,22 @@ class AgendaItemWidget(QWidget):
         self.btn_menu.setFixedSize(30, 25)
         self.btn_menu.setStyleSheet("font-weight: bold; font-size: 14px;")
         
-        # Cria o menu suspenso para as opções
         self.menu = QMenu(self)
-        
         acao_editar = QAction("Editar", self)
         acao_editar.triggered.connect(self.chamar_edicao)
-        
         acao_excluir = QAction("Excluir", self)
         acao_excluir.triggered.connect(self.chamar_exclusao)
         
         self.menu.addAction(acao_editar)
         self.menu.addAction(acao_excluir)
-
         self.btn_menu.setMenu(self.menu)
         layout.addWidget(self.btn_menu)
 
     def chamar_edicao(self):
-        self.parent_agenda.preparar_edicao(self.reg_id, self.lbl_info.text())
+        self.parent_agenda.preparar_edicao(self.reg_id)
 
     def chamar_exclusao(self):
         self.parent_agenda.excluir_horario(self.reg_id)
-
 
 class AgendaTab(QWidget):
     def __init__(self, parent=None, db=None):
@@ -59,7 +61,7 @@ class AgendaTab(QWidget):
     def init_ui(self):
         main_layout = QHBoxLayout(self)
 
-        # --- LADO ESQUERDO: Calendário ---
+        # --- LADO ESQUERDO: Calendário Estilo Windows ---
         left_layout = QVBoxLayout()
         self.calendar = QCalendarWidget()
         self.calendar.setNavigationBarVisible(True)
@@ -70,7 +72,7 @@ class AgendaTab(QWidget):
         left_layout.addStretch()
         main_layout.addLayout(left_layout, stretch=1)
 
-        # --- LADO DIREITO: Lista e Formulário ---
+        # --- LADO DIREITO: Lista e Formulário Organizado ---
         right_layout = QVBoxLayout()
         
         self.lbl_data_selecionada = QLabel("Agenda do dia: ")
@@ -80,49 +82,55 @@ class AgendaTab(QWidget):
         self.lista_horarios = QListWidget()
         right_layout.addWidget(self.lista_horarios)
 
-        # --- SELEÇÃO DE HORÁRIO INTELIGENTE (Hora e Minuto separados) ---
+        # --- FORMULÁRIO DE AGENDAMENTO ---
         form_layout = QVBoxLayout()
         
-        form_layout.addWidget(QLabel("Horário do Atendimento:"))
-        
+        # 1. Seleção de Horário (Hora e Minuto)
         hora_layout = QHBoxLayout()
-
-        # 1. Combo de Horas (00 a 23) - Editável com sugestões
+        
         self.combo_hora = QComboBox()
         horas = [f"{i:02d}" for i in range(24)]
         self.combo_hora.addItems(horas)
         self.combo_hora.setEditable(True)
-        completer_hora = QCompleter(horas, self)
-        completer_hora.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
-        completer_hora.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
-        self.combo_hora.setCompleter(completer_hora)
 
-        # 2. Combo de Minutos (de 5 em 5) - Editável
         self.combo_minuto = QComboBox()
         minutos = [f"{i:02d}" for i in range(0, 60, 5)]
         self.combo_minuto.addItems(minutos)
         self.combo_minuto.setEditable(True)
-        completer_minuto = QCompleter(minutos, self)
-        completer_minuto.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
-        completer_minuto.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
-        self.combo_minuto.setCompleter(completer_minuto)
 
         hora_layout.addWidget(QLabel("Hora:"))
         hora_layout.addWidget(self.combo_hora)
         hora_layout.addWidget(QLabel("Minuto:"))
         hora_layout.addWidget(self.combo_minuto)
-
         form_layout.addLayout(hora_layout)
 
-        # Campo de Descrição / Paciente
-        self.input_descricao_field = QLineEdit()
-        self.input_descricao_field.setPlaceholderText("Ex: Consulta - Rex (Cachorro) / Tutor João")
-        form_layout.addWidget(QLabel("Descrição / Paciente:"))
-        form_layout.addWidget(self.input_descricao_field)
+        # 2. Tutor / Cliente (ComboBox Editável com lista completa e filtro fluido)
+        form_layout.addWidget(QLabel("Tutor / Cliente:"))
+        self.combo_client = QComboBox()
+        self.combo_client.setEditable(True)
+        self.combo_client.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        form_layout.addWidget(self.combo_client)
+
+        # 3. Paciente / Pet (ComboBox Editável)
+        form_layout.addWidget(QLabel("Paciente (Pet):"))
+        self.combo_pet = QComboBox()
+        self.combo_pet.setEditable(True)
+        self.combo_pet.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        form_layout.addWidget(self.combo_pet)
+
+        # Conecta a mudança do tutor para atualizar automaticamente a lista de pets dele
+        self.combo_client.currentTextChanged.connect(self.atualizar_pets_por_cliente)
+
+        # 4. Tipo de Atendimento (Consulta, Vacina, Retorno)
+        form_layout.addWidget(QLabel("Tipo de Atendimento:"))
+        self.combo_service = QComboBox()
+        self.combo_service.addItems(["Consulta", "Vacina", "Retorno"])
+        self.combo_service.setEditable(True)
+        form_layout.addWidget(self.combo_service)
 
         right_layout.addLayout(form_layout)
 
-        # Botão de Ação
+        # Botão de Salvar/Adicionar
         self.btn_salvar = QPushButton("Adicionar Horário")
         self.btn_salvar.clicked.connect(self.salvar_horario)
         self.btn_salvar.setStyleSheet("font-weight: bold; padding: 6px;")
@@ -130,32 +138,100 @@ class AgendaTab(QWidget):
 
         main_layout.addLayout(right_layout, stretch=1)
 
+        # Carrega os clientes do banco e a agenda do dia
+        self.carregar_dados_clientes()
         self.carregar_horarios_do_dia(self.calendar.selectedDate())
+
+    def carregar_dados_clientes(self):
+        """Puxa todos os tutores cadastrados no banco aplicando filtro e listagem suspensa limpa."""
+        if not self.db:
+            return
+
+        try:
+            self.combo_client.blockSignals(True)
+            self.combo_client.clear()
+            
+            self.db.cursor.execute("SELECT first_name || ' ' || COALESCE(last_name, '') FROM clients ORDER BY first_name ASC")
+            registros = self.db.cursor.fetchall()
+            
+            nomes_clientes = [reg[0].strip() for reg in registros]
+            self.combo_client.addItems(nomes_clientes)
+            self.combo_client.setCurrentIndex(-1)
+            self.combo_client.blockSignals(False)
+
+            # Configura o QCompleter para filtrar sem apagar o texto digitado
+            completer = QCompleter(nomes_clientes, self)
+            completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+            completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+            completer.setFilterMode(Qt.MatchFlag.MatchContains)
+            self.combo_client.setCompleter(completer)
+            
+        except Exception as e:
+            print(f"Erro ao carregar clientes para a agenda: {e}")
+
+    def atualizar_pets_por_cliente(self, texto_digitado):
+        """Filtra os pets automaticamente com base no tutor completo e seleciona o primeiro por padrão."""
+        if not self.db or not texto_digitado:
+            return
+
+        try:
+            self.combo_pet.blockSignals(True)
+            self.combo_pet.clear()
+            
+            nome_limpo = texto_digitado.strip()
+
+            # Busca o cliente comparando o nome completo (suporta nomes compostos perfeitamente)
+            self.db.cursor.execute(
+                "SELECT id FROM clients WHERE (first_name || ' ' || COALESCE(last_name, '')) LIKE ?", 
+                (f"%{nome_limpo}%",)
+            )
+                
+            res = self.db.cursor.fetchone()
+            if res:
+                client_id = res[0]
+                pets = self.db.get_pets_by_client_id(client_id)
+                nomes_pets = [pet[2] for pet in pets] # pet[2] é o pet_name
+                
+                self.combo_pet.addItems(nomes_pets)
+
+                # Seleciona automaticamente o primeiro pet da lista do tutor
+                if nomes_pets:
+                    self.combo_pet.setCurrentIndex(0)
+                else:
+                    self.combo_pet.setCurrentIndex(-1)
+                    self.combo_pet.clearEditText()
+
+                completer_pet = QCompleter(nomes_pets, self)
+                completer_pet.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+                completer_pet.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+                completer_pet.setFilterMode(Qt.MatchFlag.MatchContains)
+                self.combo_pet.setCompleter(completer_pet)
+                
+            self.combo_pet.blockSignals(False)
+        except Exception as e:
+            print(f"Erro ao atualizar pets do cliente: {e}")
 
     def carregar_horarios_do_dia(self, date: QDate):
         data_str = date.toString("yyyy-MM-dd")
         self.lbl_data_selecionada.setText(f"Agenda do dia: {date.toString('dd/MM/yyyy')}")
         self.lista_horarios.clear()
         
-        self.editando_id = None
-        self.btn_salvar.setText("Adicionar Horário")
-        self.combo_hora.setCurrentIndex(0)
-        self.combo_minuto.setCurrentIndex(0)
-        self.input_descricao_field.clear()
+        self.limpar_formulario()
+        self.carregar_dados_clientes()
 
         if not self.db:
             return
 
         try:
             self.db.cursor.execute(
-                "SELECT id, time, description FROM appointments WHERE date = ? ORDER BY time ASC", 
+                "SELECT id, time, client_name, pet_name, service_type FROM appointments WHERE date = ? ORDER BY time ASC", 
                 (data_str,)
             )
             registros = self.db.cursor.fetchall()
             
-            for reg_id, hora, desc in registros:
+            for reg_id, hora, client, pet, service in registros:
                 item = QListWidgetItem(self.lista_horarios)
-                widget_item = AgendaItemWidget(reg_id, hora, desc, self)
+                widget_item = AgendaItemWidget(reg_id, hora, client, pet, service, self)
                 item.setSizeHint(widget_item.sizeHint())
                 
                 self.lista_horarios.addItem(item)
@@ -171,10 +247,12 @@ class AgendaTab(QWidget):
         m = self.combo_minuto.currentText().strip()
         hora = f"{h}:{m}"
         
-        desc = self.input_descricao_field.text().strip()
+        client = self.combo_client.currentText().strip()
+        pet = self.combo_pet.currentText().strip()
+        service = self.combo_service.currentText().strip()
 
-        if not h or not m or not desc:
-            QMessageBox.warning(self, "Aviso", "Preencha o horário completo e a descrição.")
+        if not client or not pet or not service:
+            QMessageBox.warning(self, "Aviso", "Preencha o tutor, o pet e o tipo de atendimento.")
             return
 
         if not self.db:
@@ -183,14 +261,14 @@ class AgendaTab(QWidget):
         try:
             if self.editando_id is None:
                 self.db.cursor.execute(
-                    "INSERT INTO appointments (date, time, description) VALUES (?, ?, ?)", 
-                    (data_str, hora, desc)
+                    "INSERT INTO appointments (date, time, client_name, pet_name, service_type) VALUES (?, ?, ?, ?, ?)", 
+                    (data_str, hora, client, pet, service)
                 )
-                msg = "Horário agendado com sucesso!"
+                msg = "Agendamento salvo com sucesso!"
             else:
                 self.db.cursor.execute(
-                    "UPDATE appointments SET time = ?, description = ? WHERE id = ?", 
-                    (hora, desc, self.editando_id)
+                    "UPDATE appointments SET time = ?, client_name = ?, pet_name = ?, service_type = ? WHERE id = ?", 
+                    (hora, client, pet, service, self.editando_id)
                 )
                 msg = "Agendamento atualizado com sucesso!"
                 self.editando_id = None
@@ -199,26 +277,38 @@ class AgendaTab(QWidget):
             self.db.conn.commit()
             QMessageBox.information(self, "Sucesso", msg)
             
-            self.input_descricao_field.clear()
+            self.limpar_formulario()
             self.carregar_horarios_do_dia(self.calendar.selectedDate())
             
         except Exception as e:
             QMessageBox.critical(self, "Erro", f"Erro ao salvar no banco: {e}")
 
-    def preparar_edicao(self, reg_id, texto_atual):
-        self.editando_id = reg_id
-        self.btn_salvar.setText("Salvar Alteração")
-        
-        if " - " in texto_atual:
-            partes = texto_atual.split(" - ", 1)
-            hora_limpa = partes[0].replace("<b>", "").replace("</b>", "").strip()
+    def preparar_edicao(self, reg_id):
+        if not self.db:
+            return
             
-            if ":" in hora_limpa:
-                h_part, m_part = hora_limpa.split(":", 1)
-                self.combo_hora.setEditText(h_part)
-                self.combo_minuto.setEditText(m_part)
+        try:
+            self.db.cursor.execute(
+                "SELECT time, client_name, pet_name, service_type FROM appointments WHERE id = ?", 
+                (reg_id,)
+            )
+            reg = self.db.cursor.fetchone()
+            if reg:
+                hora, client, pet, service = reg
                 
-            self.input_descricao_field.setText(partes[1])
+                if ":" in hora:
+                    h_part, m_part = hora.split(":", 1)
+                    self.combo_hora.setEditText(h_part)
+                    self.combo_minuto.setEditText(m_part)
+                
+                self.combo_client.setEditText(client)
+                self.combo_pet.setEditText(pet)
+                self.combo_service.setEditText(service)
+                
+                self.editando_id = reg_id
+                self.btn_salvar.setText("Salvar Alteração")
+        except Exception as e:
+            print(f"Erro ao preparar edição: {e}")
 
     def excluir_horario(self, reg_id):
         resposta = QMessageBox.question(
@@ -234,3 +324,14 @@ class AgendaTab(QWidget):
                 self.carregar_horarios_do_dia(self.calendar.selectedDate())
             except Exception as e:
                 QMessageBox.critical(self, "Erro", f"Erro ao excluir: {e}")
+
+    def limpar_formulario(self):
+        self.editando_id = None
+        self.btn_salvar.setText("Adicionar Horário")
+        self.combo_hora.setCurrentIndex(0)
+        self.combo_minuto.setCurrentIndex(0)
+        self.combo_client.setCurrentIndex(-1)
+        self.combo_client.clearEditText()
+        self.combo_pet.setCurrentIndex(-1)
+        self.combo_pet.clearEditText()
+        self.combo_service.setCurrentIndex(0)
