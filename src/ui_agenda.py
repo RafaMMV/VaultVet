@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (
     QListWidgetItem, QMenu, QComboBox, QCompleter
 )
 from PyQt6.QtCore import QDate, Qt
-from PyQt6.QtGui import QAction, QKeyEvent
+from PyQt6.QtGui import QAction, QKeyEvent, QTextCharFormat, QColor
 
 class AgendaItemWidget(QWidget):
     """Widget personalizado para cada linha da lista, exibindo o nome limpo e o menu de três pontinhos."""
@@ -61,7 +61,6 @@ class AutoCompleteComboBox(QComboBox):
         if event.key() in (Qt.Key.Key_Tab, Qt.Key.Key_Return, Qt.Key.Key_Enter):
             completer = self.completer()
             if completer and completer.popup().isVisible():
-                # Pega o primeiro item da lista suspensa sugerida
                 currentIndex = completer.currentIndex()
                 if not currentIndex.isValid():
                     currentIndex = completer.model().index(0, 0)
@@ -77,7 +76,6 @@ class AutoCompleteComboBox(QComboBox):
         super().keyPressEvent(event)
 
     def focusOutEvent(self, event):
-        # Quando o usuário clica fora ou pula com Tab, completa com o texto correspondente se houver correspondência exata parcial
         texto_atual = self.currentText().strip()
         completer = self.completer()
         if completer and texto_atual:
@@ -105,6 +103,9 @@ class AgendaTab(QWidget):
         self.calendar = QCalendarWidget()
         self.calendar.setNavigationBarVisible(True)
         self.calendar.clicked.connect(self.carregar_horarios_do_dia)
+        
+        # Conecta a mudança de mês para atualizar o destaque em amarelo no calendário
+        self.calendar.currentPageChanged.connect(self.pintar_dias_com_eventos)
         
         left_layout.addWidget(QLabel("<b>Selecione o Dia:</b>"))
         left_layout.addWidget(self.calendar)
@@ -143,20 +144,19 @@ class AgendaTab(QWidget):
         hora_layout.addWidget(self.combo_minuto)
         form_layout.addLayout(hora_layout)
 
-        # 2. Tutor / Cliente (Usando nosso componente inteligente AutoCompleteComboBox)
+        # 2. Tutor / Cliente
         form_layout.addWidget(QLabel("Tutor / Cliente:"))
         self.combo_client = AutoCompleteComboBox()
         form_layout.addWidget(self.combo_client)
 
-        # 3. Paciente / Pet (Também usando o componente inteligente)
+        # 3. Paciente / Pet
         form_layout.addWidget(QLabel("Paciente (Pet):"))
         self.combo_pet = AutoCompleteComboBox()
         form_layout.addWidget(self.combo_pet)
 
-        # Conecta a mudança do tutor para atualizar automaticamente os pets dele
         self.combo_client.currentTextChanged.connect(self.atualizar_pets_por_cliente)
 
-        # 4. Tipo de Atendimento (Consulta, Vacina, Retorno)
+        # 4. Tipo de Atendimento
         form_layout.addWidget(QLabel("Tipo de Atendimento:"))
         self.combo_service = AutoCompleteComboBox()
         self.combo_service.addItems(["Consulta", "Vacina", "Retorno"])
@@ -172,12 +172,48 @@ class AgendaTab(QWidget):
 
         main_layout.addLayout(right_layout, stretch=1)
 
-        # Carrega os dados iniciais
+        # Carrega os dados iniciais e pinta o calendário do mês atual
         self.carregar_dados_clientes()
         self.carregar_horarios_do_dia(self.calendar.selectedDate())
+        self.pintar_dias_com_eventos(QDate.currentDate().year(), QDate.currentDate().month())
+
+    def pintar_dias_com_eventos(self, year, month):
+        """Busca no banco de dados os dias do mês visível que possuem agendamentos e pinta de amarelo."""
+        if not self.db:
+            return
+        try:
+            formato_amarelo = QTextCharFormat()
+            formato_amarelo.setForeground(QColor("#ffbf00")) # Texto escuro
+
+            primeiro_dia = QDate(year, month, 1)
+            ultimo_dia = QDate(year, month, primeiro_dia.daysInMonth())
+
+            # Reseta o formato do mês inteiro antes de pintar
+            d_atual = primeiro_dia
+            while d_atual <= ultimo_dia:
+                self.calendar.setDateTextFormat(d_atual, QTextCharFormat())
+                d_atual = d_atual.addDays(1)
+
+            inicio_str = primeiro_dia.toString("yyyy-MM-dd")
+            fim_str = ultimo_dia.toString("yyyy-MM-dd")
+
+            self.db.cursor.execute("""
+                SELECT DISTINCT date FROM appointments 
+                WHERE date BETWEEN ? AND ?
+            """, (inicio_str, fim_str))
+            
+            dias_com_agendamento = self.db.cursor.fetchall()
+
+            for (data_db,) in dias_com_agendamento:
+                partes = data_db.split("-")
+                if len(partes) == 3:
+                    ano, mes, dia = int(partes[0]), int(partes[1]), int(partes[2])
+                    qdate_evento = QDate(ano, mes, dia)
+                    self.calendar.setDateTextFormat(qdate_evento, formato_amarelo)
+        except Exception as e:
+            print(f"Erro ao pintar dias no calendário da agenda: {e}")
 
     def carregar_dados_clientes(self):
-        """Puxa todos os tutores cadastrados e ativa o autocompletar flutuante."""
         if not self.db:
             return
 
@@ -193,7 +229,6 @@ class AgendaTab(QWidget):
             self.combo_client.setCurrentIndex(-1)
             self.combo_client.blockSignals(False)
 
-            # Configuração correta do QCompleter
             completer = QCompleter(nomes_clientes, self.combo_client)
             completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
             completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
@@ -206,7 +241,6 @@ class AgendaTab(QWidget):
             print(f"Erro ao carregar clientes para a agenda: {e}")
 
     def atualizar_pets_por_cliente(self, texto_digitado):
-        """Filtra os pets automaticamente com base no tutor selecionado ou digitado."""
         if not self.db or not texto_digitado:
             self.combo_pet.clear()
             return
@@ -317,6 +351,9 @@ class AgendaTab(QWidget):
             self.limpar_formulario()
             self.carregar_horarios_do_dia(self.calendar.selectedDate())
             
+            # Atualiza o destaque em amarelo no calendário após salvar
+            self.pintar_dias_com_eventos(self.calendar.yearShown(), self.calendar.monthShown())
+            
         except Exception as e:
             QMessageBox.critical(self, "Erro", f"Erro ao salvar no banco: {e}")
 
@@ -360,6 +397,9 @@ class AgendaTab(QWidget):
                 self.db.conn.commit()
                 QMessageBox.information(self, "Sucesso", "Agendamento excluído!")
                 self.carregar_horarios_do_dia(self.calendar.selectedDate())
+                
+                # Atualiza o destaque em amarelo no calendário após excluir
+                self.pintar_dias_com_eventos(self.calendar.yearShown(), self.calendar.monthShown())
             except Exception as e:
                 QMessageBox.critical(self, "Erro", f"Erro ao excluir: {e}")
 

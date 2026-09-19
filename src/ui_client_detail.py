@@ -2,7 +2,7 @@ from datetime import datetime
 from PyQt6.QtWidgets import (
     QWidget, QLineEdit, QFormLayout, QVBoxLayout, 
     QPushButton, QHBoxLayout, QGroupBox, QLabel, 
-    QListWidget, QMessageBox, QComboBox, QDialog, QDialogButtonBox, QListWidgetItem
+    QListWidget, QMessageBox, QComboBox, QDialog, QDialogButtonBox, QListWidgetItem, QTextBrowser
 )
 from PyQt6.QtCore import Qt
 
@@ -22,11 +22,19 @@ class ClientDetailTab(QWidget):
         self.init_ui()
         self.load_client_data()
         self.load_pets_list()
+        self.load_historico_cliente()
         self.connect_change_trackers()
 
-        # Se foi aberto clicando diretamente em um pet na lista, já seleciona ele na tela
+        # Lógica de seleção automática:
         if self.select_pet_id:
+            # Se veio um ID específico de pet (ex: clicando direto em um pet), abre ele
             self.auto_select_pet(self.select_pet_id)
+        elif self.pets_list_widget.count() > 0:
+            # Se não veio nenhum específico, mas o tutor tem pets cadastrados, seleciona o 1º da lista!
+            primeiro_item = self.pets_list_widget.item(0)
+            pet_data = primeiro_item.data(Qt.ItemDataRole.UserRole)
+            self.pets_list_widget.setCurrentItem(primeiro_item)
+            self.load_pet_into_form(pet_data)
 
     def init_ui(self):
         main_layout = QVBoxLayout(self)
@@ -41,7 +49,7 @@ class ClientDetailTab(QWidget):
         self.save_client_button.clicked.connect(self.save_client_changes)
 
         self.delete_client_button = QPushButton("Remover Cliente")
-        self.delete_client_button.setStyleSheet("background-color: #ffcccc; color: #990000; font-weight: bold;")
+        self.delete_client_button.setStyleSheet("font-weight: bold;")
         self.delete_client_button.clicked.connect(self.confirm_delete_client)
 
         top_layout.addWidget(self.title_label)
@@ -50,10 +58,12 @@ class ClientDetailTab(QWidget):
         top_layout.addWidget(self.delete_client_button)
         main_layout.addLayout(top_layout)
 
-        # Layout dividido em duas colunas (Dados do Tutor | Gestão de Pets)
+        # Layout dividido em duas colunas (Dados do Tutor + Histórico | Gestão de Pets)
         content_layout = QHBoxLayout()
 
-        # --- COLUNA ESQUERDA: Dados do Tutor ---
+        # --- COLUNA ESQUERDA: Dados do Tutor + Histórico Geral do Cliente ---
+        left_container = QVBoxLayout()
+
         tutor_group = QGroupBox("Dados do Tutor")
         tutor_layout = QFormLayout(tutor_group)
 
@@ -83,7 +93,28 @@ class ClientDetailTab(QWidget):
         tutor_layout.addRow("CPF:", self.cpf_input)
         tutor_layout.addRow("RG:", self.rg_input)
 
-        content_layout.addWidget(tutor_group)
+        left_container.addWidget(tutor_group)
+
+        # Bloco de Histórico Completo de Atendimentos do Cliente
+        self.group_historico_cliente = QGroupBox("Histórico de Atendimentos dos Pets")
+        self.group_historico_cliente.setStyleSheet("QGroupBox { font-weight: bold; font-size: 13px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px; padding-top: 8px; }")
+        
+        hist_cliente_layout = QVBoxLayout(self.group_historico_cliente)
+        self.txt_historico_cliente = QTextBrowser()
+        self.txt_historico_cliente.setPlaceholderText("Nenhum atendimento registrado para os pets deste cliente.")
+        hist_cliente_layout.addWidget(self.txt_historico_cliente)
+
+        # Botão para excluir por ID diretamente na aba do cliente
+        btn_excluir_hist_layout = QHBoxLayout()
+        self.btn_excluir_hist_cli = QPushButton("Excluir Atendimento por ID")
+        self.btn_excluir_hist_cli.setStyleSheet("font-size: 11px; padding: 4px;")
+        self.btn_excluir_hist_cli.clicked.connect(self.solicitar_exclusao_historico_por_id)
+        btn_excluir_hist_layout.addWidget(self.btn_excluir_hist_cli)
+        
+        hist_cliente_layout.addLayout(btn_excluir_hist_layout)
+        left_container.addWidget(self.group_historico_cliente)
+
+        content_layout.addLayout(left_container)
 
         # --- COLUNA DIREITA: Lista de Pets + Ficha do Pet ---
         right_container = QVBoxLayout()
@@ -101,7 +132,7 @@ class ClientDetailTab(QWidget):
         self.add_pet_button.clicked.connect(self.prepare_new_pet_form)
         
         self.remove_pet_button = QPushButton("Remover Pet Selecionado")
-        self.remove_pet_button.setStyleSheet("color: #ffcccc;")
+    #self.remove_pet_button.setStyleSheet(" color: #d9534f")
         self.remove_pet_button.clicked.connect(self.confirm_delete_pet)
 
         pets_btn_layout.addWidget(self.add_pet_button)
@@ -201,6 +232,72 @@ class ClientDetailTab(QWidget):
             item.setData(Qt.ItemDataRole.UserRole, pet)
             self.pets_list_widget.addItem(item)
 
+    def load_historico_cliente(self):
+        """Carrega o histórico completo de todos os atendimentos dos pets deste cliente."""
+        if not self.db or not self.client_id:
+            return
+
+        try:
+            # Puxa todos os históricos vinculados aos pets pertencentes a este client_id
+            query = """
+                CH.id, CH.date, CH.notes, P.pet_name 
+                FROM consultation_history CH
+                JOIN patients P ON CH.pet_id = P.id
+                WHERE CH.client_id = ?
+                ORDER BY CH.date DESC, CH.id DESC
+            """
+            # Usando o cursor direto para garantir flexibilidade caso a estrutura varie levemente
+            self.db.cursor.execute("""
+                SELECT ch.id, ch.date, ch.notes, p.pet_name 
+                FROM consultation_history ch
+                JOIN patients p ON ch.pet_id = p.id
+                WHERE ch.client_id = ?
+                ORDER BY ch.date DESC, ch.id DESC
+            """, (self.client_id,))
+            registros = self.db.cursor.fetchall()
+
+            if registros:
+                html_content = ""
+                for hist_id, data_atend, notes, pet_name in registros:
+                    partes_data = data_atend.split("-")
+                    if len(partes_data) == 3:
+                        data_formatada = f"{partes_data[2]}/{partes_data[1]}/{partes_data[0]}"
+                    else:
+                        data_formatada = data_atend
+
+                    html_content += f"<b>{data_formatada} — Pet: {pet_name}</b><br>{notes.replace('\n', '<br>')}<br><span style='color: #888; font-size: 10px;'>ID: #{hist_id}</span><br><br>"
+                
+                self.txt_historico_cliente.setHtml(html_content.strip())
+            else:
+                self.txt_historico_cliente.setHtml("<i>Nenhum atendimento registrado para os pets deste cliente.</i>")
+        except Exception as e:
+            print(f"Erro ao carregar histórico do cliente: {e}")
+            self.txt_historico_cliente.setHtml("<i>Erro ao carregar histórico.</i>")
+
+    def solicitar_exclusao_historico_por_id(self):
+        """Permite apagar um atendimento direto da aba do cliente informando o ID."""
+        from PyQt6.QtWidgets import QInputDialog
+        id_str, ok = QInputDialog.getText(self, "Excluir Atendimento", "Digite o número do ID do atendimento que deseja apagar (ex: 12):")
+        
+        if ok and id_str.strip():
+            try:
+                id_limpo = id_str.replace("#", "").strip()
+                hist_id = int(id_limpo)
+
+                resposta = QMessageBox.question(
+                    self, "Confirmação", f"Deseja realmente excluir permanentemente o atendimento ID #{hist_id}?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                )
+
+                if resposta == QMessageBox.StandardButton.Yes:
+                    self.db.deletar_historico_por_id(hist_id)
+                    QMessageBox.information(self, "Sucesso", f"Atendimento ID #{hist_id} removido com sucesso!")
+                    self.load_historico_cliente()
+            except ValueError:
+                QMessageBox.warning(self, "Erro", "Por favor, digite apenas números válidos para o ID.")
+            except Exception as e:
+                QMessageBox.critical(self, "Erro", f"Erro ao excluir histórico: {e}")
+
     def auto_select_pet(self, pet_id):
         for i in range(self.pets_list_widget.count()):
             item = self.pets_list_widget.item(i)
@@ -255,6 +352,7 @@ class ClientDetailTab(QWidget):
 
             self._is_modified_flag = False
             self.load_pets_list()
+            self.load_historico_cliente()
             
             if hasattr(self.main_window, "client_list_ui"):
                 self.main_window.client_list_ui.load_data()
@@ -286,7 +384,6 @@ class ClientDetailTab(QWidget):
         if not self._is_loading:
             self._is_modified_flag = True
 
-    # Método oficial chamado pelo ui_main.py
     def has_unsaved_changes(self):
         return self._is_modified_flag
 
@@ -522,7 +619,7 @@ class ClientDetailTab(QWidget):
             """, updated_data)
             self.db.conn.commit()
             
-            self._is_modified_flag = False  # Reseta a flag após salvar o tutor
+            self._is_modified_flag = False  
             
             QMessageBox.information(self, "Sucesso", "Alterações do tutor salvas com sucesso!")
             if hasattr(self.main_window, "client_list_ui"):
@@ -565,6 +662,7 @@ class ClientDetailTab(QWidget):
                 self.db.conn.commit()
                 QMessageBox.information(self, "Sucesso", "Pet removido com sucesso!")
                 self.load_pets_list()
+                self.load_historico_cliente()
                 if hasattr(self.main_window, "client_list_ui"):
                     self.main_window.client_list_ui.load_data()
             except Exception as e:

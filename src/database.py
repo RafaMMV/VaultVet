@@ -83,8 +83,20 @@ class Database:
                     FOREIGN KEY (client_id) REFERENCES clients (id)
                 )
             """)
-                        
+
+            self.cursor.execute("""
+                CREATE TABLE IF NOT EXISTS pet_vaccines (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    pet_id INTEGER,
+                    vaccine_name TEXT,
+                    application_date TEXT,
+                    next_due_date TEXT,
+                    FOREIGN KEY (pet_id) REFERENCES patients (id) ON DELETE CASCADE
+                )
+            """)
+            
             self.conn.commit()
+                        
             print("Tables verified/created successfully with full attributes.")
         except sqlite3.Error as e:
             print(f"Error creating tables: {e}")
