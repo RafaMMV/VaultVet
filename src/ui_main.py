@@ -3,7 +3,7 @@ from PyQt6.QtWidgets import (
     QMainWindow, QTabBar, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QMessageBox, QListWidget, QListWidgetItem, QPushButton, QDateEdit, 
     QGroupBox, QFormLayout, QTextEdit, QTextBrowser, QLineEdit, QCheckBox, QGridLayout,
-    QDialog, QDialogButtonBox
+    QDialog, QDialogButtonBox, QInputDialog
 )
 from PyQt6.QtCore import QDate, Qt
 from PyQt6.QtGui import QIcon, QTextCharFormat, QColor
@@ -39,12 +39,13 @@ class MoedaLineEdit(QLineEdit):
 
 class DialogoDivisaoPagamento(QDialog):
     """Janela pop-up para gerenciar múltiplas formas de pagamento com cálculo automático em tempo real."""
-    def __init__(self, parent=None, valor_total_sugerido=0.0):
+    def __init__(self, parent=None, valor_total_sugerido=0.0, dados_anteriores=None):
         super().__init__(parent)
         self.setWindowTitle("Dividir Pagamento")
         self.setMinimumWidth(450)
         self.valor_total = valor_total_sugerido
         self.pagamentos_resultado = []
+        self.dados_anteriores = dados_anteriores or []
         self.init_ui()
 
     def init_ui(self):
@@ -56,7 +57,6 @@ class DialogoDivisaoPagamento(QDialog):
 
         grid_pag = QGridLayout()
         
-
         grid_pag.addWidget(QLabel("PIX: R$"), 0, 0)
         self.txt_pix = MoedaLineEdit(callback_mudanca=self.calcular_restante_pendente)
         grid_pag.addWidget(self.txt_pix, 0, 1)
@@ -87,16 +87,53 @@ class DialogoDivisaoPagamento(QDialog):
 
         grid_pag.addWidget(QLabel("<b>Valor Pendente: R$</b>"), 6, 0)
         self.txt_pendente = MoedaLineEdit()
-        if self.valor_total > 0:
-            self.txt_pendente.setText(val_sug_str)
         grid_pag.addWidget(self.txt_pendente, 6, 1)
+
+        self.carregar_dados_anteriores()
 
         layout.addLayout(grid_pag)
 
         botoes = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         botoes.accepted.connect(self.validar_e_salvar)
-        botoes.rejected.connect(self.reject)
+        botoes.rejected.connect(self.tentar_cancelar)
         layout.addWidget(botoes)
+
+    def carregar_dados_anteriores(self):
+        if not self.dados_anteriores:
+            if self.valor_total > 0:
+                val_sug_str = f"{self.valor_total:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                self.txt_pendente.setText(val_sug_str)
+            return
+
+        for metodo, valor, parcelas, status in self.dados_anteriores:
+            val_str = f"{valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            if metodo == "Dinheiro":
+                self.txt_dinheiro.setText(val_str)
+            elif metodo == "PIX":
+                self.txt_pix.setText(val_str)
+            elif metodo == "Transferência":
+                self.txt_transf.setText(val_str)
+            elif metodo == "Débito":
+                self.txt_debito.setText(val_str)
+            elif metodo == "Crédito à vista":
+                self.txt_cred_vista.setText(val_str)
+            elif metodo == "Crédito parcelado":
+                self.txt_cred_parc.setText(val_str)
+                self.txt_parcelas.setText(str(parcelas))
+            elif metodo == "Valor Pendente":
+                self.txt_pendente.setText(val_str)
+        
+        self.calcular_restante_pendente()
+
+    def tentar_cancelar(self):
+        resposta = QMessageBox.question(
+            self, "Cancelar Divisão", 
+            "Deseja realmente cancelar a divisão de pagamento? Os valores configurados no pop-up serão descartados.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        if resposta == QMessageBox.StandardButton.Yes:
+            self.reject()
 
     def calcular_restante_pendente(self):
         try:
@@ -198,13 +235,13 @@ class AgendaTableWidget(QWidget):
 
         left_layout.addWidget(self.group_detalhes)
 
-        # Histórico Dinâmico de Atendimentos
-        self.group_historico = QGroupBox("Histórico de Atendimentos")
+        # Histórico do Dia Selecionado
+        self.group_historico = QGroupBox("Atendimento do Dia")
         self.group_historico.setStyleSheet("QGroupBox { font-weight: bold; font-size: 13px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px; padding-top: 8px; }")
         
         historico_layout = QVBoxLayout(self.group_historico)
         self.txt_historico = QTextBrowser()
-        self.txt_historico.setPlaceholderText("Nenhum atendimento anterior a esta data.")
+        self.txt_historico.setPlaceholderText("Nenhum atendimento registrado para esta data.")
         historico_layout.addWidget(self.txt_historico)
 
         left_layout.addWidget(self.group_historico)
@@ -303,7 +340,7 @@ class AgendaTableWidget(QWidget):
 
         center_layout.addWidget(self.group_outros)
 
-        # 4. Bloco de Pagamento Rápido na Base da Coluna Central (Ordem correta com Pendente por último)
+        # 4. Bloco de Pagamento Rápido na Base da Coluna Central
         self.group_pagamento = QGroupBox("Forma de Pagamento")
         self.group_pagamento.setStyleSheet("QGroupBox { font-weight: bold; font-size: 13px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px; padding-top: 8px; }")
         
@@ -311,7 +348,7 @@ class AgendaTableWidget(QWidget):
         
         valor_layout = QHBoxLayout()
         valor_layout.addWidget(QLabel("Valor do Atendimento R$:"))
-        self.txt_valor_atendimento = MoedaLineEdit()
+        self.txt_valor_atendimento = MoedaLineEdit(callback_mudanca=self.destravar_pagamentos_se_necessario)
         valor_layout.addWidget(self.txt_valor_atendimento)
         pag_layout.addLayout(valor_layout)
 
@@ -323,24 +360,21 @@ class AgendaTableWidget(QWidget):
         self.chk_pag_cred_parc = QCheckBox("Crédito parcelado")
         self.chk_pag_pendente = QCheckBox("Valor Pendente")
         
-        # Adiciona as opções simples primeiro
         for c in [self.chk_pag_pix, self.chk_pag_dinheiro, self.chk_pag_transf, self.chk_pag_debito, self.chk_pag_credito]:
             c.setStyleSheet("font-weight: normal; font-size: 12px;")
             pag_layout.addWidget(c)
         
-        # Adiciona o Crédito Parcelado com a caixa de texto ao lado
         cred_parc_layout = QHBoxLayout()
-        self.txt_qtd_parcelas_main = QLineEdit()
-        self.txt_qtd_parcelas_main.setPlaceholderText("Qtd. vezes")
-        self.txt_qtd_parcelas_main.setMaximumWidth(90)
+        self.txt_parcelas = QLineEdit()
+        self.txt_parcelas.setPlaceholderText("Qtd. vezes")
+        self.txt_parcelas.setMaximumWidth(90)
         cred_parc_layout.addWidget(self.chk_pag_cred_parc)
-        cred_parc_layout.addWidget(self.txt_qtd_parcelas_main)
+        cred_parc_layout.addWidget(self.txt_parcelas)
         cred_parc_layout.addStretch()
 
         self.chk_pag_cred_parc.setStyleSheet("font-weight: normal; font-size: 12px;")
         pag_layout.addLayout(cred_parc_layout)
 
-        # Adiciona o Valor Pendente obrigatoriamente por ÚLTIMO embaixo de tudo
         self.chk_pag_pendente.setStyleSheet("font-weight: normal; font-size: 12px;")
         pag_layout.addWidget(self.chk_pag_pendente)
 
@@ -400,6 +434,15 @@ class AgendaTableWidget(QWidget):
         main_layout.addLayout(right_layout, stretch=2)
         self.carregar_horarios()
 
+    def destravar_pagamentos_se_necessario(self):
+        """Se o usuário apagar ou zerar o valor principal, limpa a divisão e destrava os checkboxes."""
+        txt = self.txt_valor_atendimento.text().strip()
+        if not txt or txt == "0,00":
+            self.pagamentos_personalizados = None
+            for chk in [self.chk_pag_pix, self.chk_pag_dinheiro, self.chk_pag_transf, self.chk_pag_debito, self.chk_pag_credito, self.chk_pag_cred_parc, self.chk_pag_pendente]:
+                chk.setEnabled(True)
+            self.txt_parcelas.setEnabled(True)
+
     def abrir_popup_divisao(self):
         try:
             txt = self.txt_valor_atendimento.text().replace(".", "").replace(",", ".").strip()
@@ -407,12 +450,24 @@ class AgendaTableWidget(QWidget):
         except ValueError:
             total = 0.0
 
-        dlg = DialogoDivisaoPagamento(self, valor_total_sugerido=total)
+        dados_atuais = getattr(self, 'pagamentos_personalizados', None)
+        dlg = DialogoDivisaoPagamento(self, valor_total_sugerido=total, dados_anteriores=dados_atuais)
+        
         if dlg.exec() == QDialog.DialogCode.Accepted:
             self.pagamentos_personalizados = dlg.pagamentos_resultado
+            
+            for chk in [self.chk_pag_pix, self.chk_pag_dinheiro, self.chk_pag_transf, self.chk_pag_debito, self.chk_pag_credito, self.chk_pag_cred_parc, self.chk_pag_pendente]:
+                chk.setChecked(False)
+                chk.setEnabled(False)
+            self.txt_parcelas.clear()
+            self.txt_parcelas.setEnabled(False)
+
             QMessageBox.information(self, "Sucesso", "Divisão de pagamento configurada com sucesso! Clique em 'Salvar Atendimento' para registrar.")
         else:
-            self.pagamentos_personalizados = None
+            if not getattr(self, 'pagamentos_personalizados', None):
+                for chk in [self.chk_pag_pix, self.chk_pag_dinheiro, self.chk_pag_transf, self.chk_pag_debito, self.chk_pag_credito, self.chk_pag_cred_parc, self.chk_pag_pendente]:
+                    chk.setEnabled(True)
+                self.txt_parcelas.setEnabled(True)
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -572,41 +627,66 @@ class AgendaTableWidget(QWidget):
     def atualizar_paineis_atendimento(self, pet_id):
         data_selecionada_str = self.date_edit.date().toString("yyyy-MM-dd")
 
-        try:
-            self.db.cursor.execute("""
-                SELECT id, date, notes FROM consultation_history 
-                WHERE pet_id = ? AND date < ? 
-                ORDER BY date DESC, id DESC 
-                LIMIT 2
-            """, (pet_id, data_selecionada_str))
-            historicos = self.db.cursor.fetchall()
-
-            if historicos:
-                html_content = ""
-                for hist_id, data_ant, notes_ant in historicos:
-                    partes_data = data_ant.split("-")
-                    if len(partes_data) == 3:
-                        data_formatada = f"{partes_data[2]}/{partes_data[1]}/{partes_data[0]}"
-                    else:
-                        data_formatada = data_ant
-
-                    html_content += f"<b>{data_formatada}</b><br>{notes_ant.replace('\n', '<br>')}<br><span style='color: #888; font-size: 10px;'>ID: #{hist_id}</span><br><br>"
-                
-                self.txt_historico.setHtml(html_content.strip())
-            else:
-                self.txt_historico.setHtml("<i>Nenhum atendimento anterior a esta data.</i>")
-        except Exception as e:
-            print(f"Erro ao buscar históricos anteriores: {e}")
-            self.txt_historico.setHtml("<i>Erro ao carregar histórico.</i>")
-
         resumo_do_dia = self.db.get_historico_do_dia(pet_id, data_selecionada_str)
         if resumo_do_dia:
             self.current_historico_id, texto_salvo = resumo_do_dia
             self.txt_atendimento.setText(texto_salvo)
+            self.txt_historico.setHtml(f"<b>Atendimento do dia:</b><br>{texto_salvo.replace('\n', '<br>')}")
             self.btn_salvar_atendimento.setText("Atualizar Atendimento")
+
+            try:
+                self.db.cursor.execute("""
+                    SELECT payment_method, amount, installments, status 
+                    FROM consultation_payments 
+                    WHERE consultation_id = ?
+                """, (self.current_historico_id,))
+                pagamentos_salvos = self.db.cursor.fetchall()
+
+                if pagamentos_salvos:
+                    self.txt_valor_atendimento.clear()
+                    self.pagamentos_personalizados = None
+                    for chk in [self.chk_pag_pix, self.chk_pag_dinheiro, self.chk_pag_transf, self.chk_pag_debito, self.chk_pag_credito, self.chk_pag_cred_parc, self.chk_pag_pendente]:
+                        chk.setChecked(False)
+                        chk.setEnabled(True)
+                    self.txt_parcelas.clear()
+                    self.txt_parcelas.setEnabled(True)
+
+                    if len(pagamentos_salvos) > 1:
+                        self.pagamentos_personalizados = [(m, v, p, s) for m, v, p, s in pagamentos_salvos]
+                        valor_total_hist = sum(v for _, v, _, _ in pagamentos_salvos)
+                        val_str = f"{valor_total_hist:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                        self.txt_valor_atendimento.setText(val_str)
+
+                        for chk in [self.chk_pag_pix, self.chk_pag_dinheiro, self.chk_pag_transf, self.chk_pag_debito, self.chk_pag_credito, self.chk_pag_cred_parc, self.chk_pag_pendente]:
+                            chk.setEnabled(False)
+                        self.txt_parcelas.setEnabled(False)
+                    else:
+                        metodo, valor, parcelas, status = pagamentos_salvos[0]
+                        val_str = f"{valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                        self.txt_valor_atendimento.setText(val_str)
+
+                        if metodo == "PIX": self.chk_pag_pix.setChecked(True)
+                        elif metodo == "Dinheiro": self.chk_pag_dinheiro.setChecked(True)
+                        elif metodo == "Transferência": self.chk_pag_transf.setChecked(True)
+                        elif metodo == "Débito": self.chk_pag_debito.setChecked(True)
+                        elif metodo == "Crédito à vista": self.chk_pag_credito.setChecked(True)
+                        elif metodo == "Valor Pendente": self.chk_pag_pendente.setChecked(True)
+                        elif metodo == "Crédito parcelado":
+                            self.chk_pag_cred_parc.setChecked(True)
+                            self.txt_parcelas.setText(str(parcelas))
+            except Exception as ex:
+                print(f"Erro ao carregar pagamentos salvos: {ex}")
         else:
             self.current_historico_id = None
             self.txt_atendimento.clear()
+            self.txt_historico.setHtml("<i>Nenhum atendimento registrado para esta data.</i>")
+            self.txt_valor_atendimento.clear()
+            self.pagamentos_personalizados = None
+            for chk in [self.chk_pag_pix, self.chk_pag_dinheiro, self.chk_pag_transf, self.chk_pag_debito, self.chk_pag_credito, self.chk_pag_cred_parc, self.chk_pag_pendente]:
+                chk.setChecked(False)
+                chk.setEnabled(True)
+            self.txt_parcelas.clear()
+            self.txt_parcelas.setEnabled(True)
             self.btn_salvar_atendimento.setText("Salvar Atendimento")
 
     def salvar_ou_atualizar_atendimento(self):
@@ -614,8 +694,21 @@ class AgendaTableWidget(QWidget):
             QMessageBox.warning(self, "Aviso", "Selecione um agendamento válido.")
             return
 
-        texto = self.txt_atendimento.toPlainText().strip()
         data_app = self.date_edit.date()
+        hoje = QDate.currentDate()
+
+        if data_app < hoje:
+            senha, ok = QInputDialog.getText(
+                self, "Segurança", "Este atendimento é de um dia anterior.\nDigite a senha de administrador para alterar:", 
+                QLineEdit.EchoMode.Password
+            )
+            if not ok:
+                return
+            if senha != "1234":
+                QMessageBox.critical(self, "Erro", "Senha incorreta! Alteração não permitida.")
+                return
+
+        texto = self.txt_atendimento.toPlainText().strip()
         data_str = data_app.toString("yyyy-MM-dd")
         
         if not texto:
@@ -646,8 +739,8 @@ class AgendaTableWidget(QWidget):
                 if birth_date_str:
                     try:
                         b_date = datetime.strptime(birth_date_str, "%d/%m/%Y")
-                        hoje = datetime.now()
-                        dias_de_vida = (hoje - b_date).days
+                        hoje_dt = datetime.now()
+                        dias_de_vida = (hoje_dt - b_date).days
                         if 0 <= dias_de_vida < 365:
                             is_filhote = True
                     except ValueError:
@@ -717,7 +810,7 @@ class AgendaTableWidget(QWidget):
                 elif self.chk_pag_cred_parc.isChecked():
                     metodo_escolhido = "Crédito parcelado"
                     try:
-                        parcelas = int(self.txt_qtd_parcelas_main.text() or 1)
+                        parcelas = int(self.txt_parcelas.text() or 1)
                     except ValueError:
                         parcelas = 1
 
@@ -737,14 +830,12 @@ class AgendaTableWidget(QWidget):
             self.txt_vermifugo_opc.clear()
             self.txt_antipulgas_opc.clear()
             self.txt_valor_atendimento.clear()
-            self.chk_pag_pix.setChecked(False)
-            self.chk_pag_dinheiro.setChecked(False)
-            self.chk_pag_transf.setChecked(False)
-            self.chk_pag_debito.setChecked(False)
-            self.chk_pag_credito.setChecked(False)
-            self.chk_pag_pendente.setChecked(False)
-            self.chk_pag_cred_parc.setChecked(False)
-            self.txt_qtd_parcelas_main.clear()
+            
+            for chk in [self.chk_pag_pix, self.chk_pag_dinheiro, self.chk_pag_transf, self.chk_pag_debito, self.chk_pag_credito, self.chk_pag_cred_parc, self.chk_pag_pendente]:
+                chk.setChecked(False)
+                chk.setEnabled(True)
+            self.txt_parcelas.clear()
+            self.txt_parcelas.setEnabled(True)
 
             self.atualizar_paineis_atendimento(self.current_pet_id)
             
@@ -767,7 +858,10 @@ class AgendaTableWidget(QWidget):
         self.lbl_det_peso.setText("-")
         self.txt_atendimento.clear()
         self.txt_historico.clear()
+        
+        # Limpa o pagamento personalizado com força
         self.pagamentos_personalizados = None
+        
         self.chk_v8.setChecked(False)
         self.chk_v10.setChecked(False)
         self.chk_v4.setChecked(False)
@@ -779,14 +873,13 @@ class AgendaTableWidget(QWidget):
         self.txt_vermifugo_opc.clear()
         self.txt_antipulgas_opc.clear()
         self.txt_valor_atendimento.clear()
-        self.chk_pag_pix.setChecked(False)
-        self.chk_pag_dinheiro.setChecked(False)
-        self.chk_pag_transf.setChecked(False)
-        self.chk_pag_debito.setChecked(False)
-        self.chk_pag_credito.setChecked(False)
-        self.chk_pag_pendente.setChecked(False)
-        self.chk_pag_cred_parc.setChecked(False)
-        self.txt_qtd_parcelas_main.clear()
+        
+        for chk in [self.chk_pag_pix, self.chk_pag_dinheiro, self.chk_pag_transf, self.chk_pag_debito, self.chk_pag_credito, self.chk_pag_cred_parc, self.chk_pag_pendente]:
+            chk.setChecked(False)
+            chk.setEnabled(True)
+        self.txt_parcelas.clear()
+        self.txt_parcelas.setEnabled(True)
+        
         self.btn_salvar_atendimento.setText("Salvar Atendimento")
 
     def preparar_edicao(self, reg_id):
@@ -796,6 +889,18 @@ class AgendaTableWidget(QWidget):
             parent_main.tabs.setCurrentWidget(parent_main.agenda_tab)
 
     def excluir_horario(self, reg_id):
+        data_app = self.date_edit.date()
+        hoje = QDate.currentDate()
+
+        if data_app < hoje:
+            senha, ok = QInputDialog.getText(
+                self, "Segurança", "Este agendamento é de um dia anterior.\nDigite a senha de administrador para excluir:", 
+                QLineEdit.EchoMode.Password
+            )
+            if not ok or senha != "1234":
+                QMessageBox.critical(self, "Erro", "Senha incorreta ou cancelado! Exclusão não permitida.")
+                return
+
         resposta = QMessageBox.question(
             self, "Confirmação", "Deseja realmente excluir este agendamento?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No

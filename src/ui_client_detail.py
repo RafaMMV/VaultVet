@@ -21,7 +21,7 @@ class ClientDetailTab(QWidget):
         self.select_pet_id = select_pet_id  # Guarda o ID do pet recebido
         
         self.current_selected_pet_id = None 
-        self._is_loading = False 
+        self.I_is_loading = False 
         self._is_modified_flag = False  # Flag interna de alterações
         
         self.init_ui()
@@ -29,6 +29,7 @@ class ClientDetailTab(QWidget):
         self.load_pets_list()
         self.load_historico_cliente(None) # Carrega o histórico geral de todos os pets inicialmente
         self.load_vacinas_cliente(None)   # Carrega o histórico de vacinas geral inicialmente
+        self.load_historico_pagamentos(None) # Carrega o histórico de pagamentos geral inicialmente
         self.connect_change_trackers()
 
         # Lógica de seleção automática:
@@ -51,11 +52,10 @@ class ClientDetailTab(QWidget):
         self.title_label.setStyleSheet("font-size: 16px; font-weight: bold;")
         
         self.save_client_button = QPushButton("Salvar Alterações do Tutor")
-        self.save_client_button.setStyleSheet("font-weight: bold;")
         self.save_client_button.clicked.connect(self.save_client_changes)
 
         self.delete_client_button = QPushButton("Remover Cliente")
-        self.delete_client_button.setStyleSheet("font-weight: bold;color: #c53030;")
+        self.delete_client_button.setStyleSheet("color: #c53030; font-weight: bold;")
         self.delete_client_button.clicked.connect(self.confirm_delete_client)
 
         top_layout.addWidget(self.title_label)
@@ -65,13 +65,13 @@ class ClientDetailTab(QWidget):
         main_layout.addLayout(top_layout)
 
         # Layout dividido em TRÊS colunas (Esquerda | Meio | Direita)
-        # Ajuste o stretch das colunas aqui se quiser mudar a largura geral delas
         content_layout = QHBoxLayout()
 
         # --- COLUNA ESQUERDA: Dados do Tutor + Histórico de Atendimentos ---
         left_container = QVBoxLayout()
 
         tutor_group = QGroupBox("Dados do Tutor")
+        tutor_group.setStyleSheet("QGroupBox { font-weight: bold; font-size: 13px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px; padding-top: 8px; }")
         tutor_layout = QFormLayout(tutor_group)
 
         self.first_name_input = QLineEdit()
@@ -113,7 +113,7 @@ class ClientDetailTab(QWidget):
 
         btn_excluir_hist_layout = QHBoxLayout()
         self.btn_excluir_hist_cli = QPushButton("Excluir Atendimento por ID")
-        self.btn_excluir_hist_cli.setStyleSheet("font-size: 11px; padding: 4px;")
+        self.btn_excluir_hist_cli.setStyleSheet("color: #c53030; font-weight: bold;")
         self.btn_excluir_hist_cli.clicked.connect(self.solicitar_exclusao_historico_por_id)
         btn_excluir_hist_layout.addWidget(self.btn_excluir_hist_cli)
         
@@ -122,21 +122,40 @@ class ClientDetailTab(QWidget):
 
         content_layout.addLayout(left_container, stretch=3)
 
-        # --- COLUNA DO MEIO: Resumo + Exames + Vacinas ---
+        # --- COLUNA DO MEIO: Histórico de Pagamentos + Exames + Vacinas ---
         self.middle_widget = QWidget()
         middle_layout = QVBoxLayout(self.middle_widget)
         middle_layout.setContentsMargins(4, 0, 4, 0)
 
-        # 1. Bloco de Resumo / Pendências
-        self.middle_group = QGroupBox("Resumo / Pendências")
-        self.middle_group.setStyleSheet("QGroupBox { font-weight: bold; font-size: 13px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px; padding-top: 8px; }")
-        self.middle_group.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        # 1. Bloco de Histórico de Pagamentos (Substituiu Resumo / Pendências)
+        self.group_pagamentos_cliente = QGroupBox("Histórico de Pagamentos")
+        self.group_pagamentos_cliente.setStyleSheet("QGroupBox { font-weight: bold; font-size: 13px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px; padding-top: 8px; }")
+        self.group_pagamentos_cliente.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         
-        middle_group_layout = QVBoxLayout(self.middle_group)
-        self.txt_middle_info = QTextBrowser()
-        self.txt_middle_info.setPlaceholderText("Informações centrais...")
-        middle_group_layout.addWidget(self.txt_middle_info)
-        middle_layout.addWidget(self.middle_group, stretch=35)
+        pag_cliente_layout = QVBoxLayout(self.group_pagamentos_cliente)
+        
+        # Filtro de visualização (Todos vs Apenas Pendências)
+        filtro_pag_layout = QHBoxLayout()
+        filtro_pag_layout.addWidget(QLabel("Filtrar:"))
+        self.combo_filtro_pag = QComboBox()
+        self.combo_filtro_pag.addItems(["Todos os Pagamentos", "Apenas Pendências"])
+        self.combo_filtro_pag.currentIndexChanged.connect(lambda: self.load_historico_pagamentos(self.current_selected_pet_id))
+        filtro_pag_layout.addWidget(self.combo_filtro_pag)
+        pag_cliente_layout.addLayout(filtro_pag_layout)
+
+        self.txt_pagamentos_cliente = QTextBrowser()
+        self.txt_pagamentos_cliente.setPlaceholderText("Nenhum pagamento registrado.")
+        pag_cliente_layout.addWidget(self.txt_pagamentos_cliente)
+
+        # Botão para excluir pagamento por ID (caso ocorra algum erro)
+        btn_excluir_pag_layout = QHBoxLayout()
+        self.btn_excluir_pag_cli = QPushButton("Excluir Pagamento por ID")
+        self.btn_excluir_pag_cli.setStyleSheet("color: #c53030; font-weight: bold;")
+        self.btn_excluir_pag_cli.clicked.connect(self.solicitar_exclusao_pagamento_por_id)
+        btn_excluir_pag_layout.addWidget(self.btn_excluir_pag_cli)
+        pag_cliente_layout.addLayout(btn_excluir_pag_layout)
+
+        middle_layout.addWidget(self.group_pagamentos_cliente, stretch=35)
 
         # 2. Bloco de Resultados de Exames
         self.group_exames = QGroupBox("Resultados de Exames")
@@ -154,7 +173,7 @@ class ClientDetailTab(QWidget):
         self.btn_anexar_exame.clicked.connect(self.anexar_exame_pet)
 
         self.btn_remover_exame = QPushButton("Remover")
-        self.btn_remover_exame.setStyleSheet("font-size: 11px; padding: 4px; color: #c53030;")
+        self.btn_remover_exame.setStyleSheet("color: #c53030; font-weight: bold;")
         self.btn_remover_exame.clicked.connect(self.remover_exame_pet)
 
         exames_btn_layout.addWidget(self.btn_anexar_exame)
@@ -163,7 +182,7 @@ class ClientDetailTab(QWidget):
         
         middle_layout.addWidget(self.group_exames, stretch=35)
 
-        # 3. Bloco de Controle e Histórico de Vacinas (Movido para cá!)
+        # 3. Bloco de Controle e Histórico de Vacinas
         self.group_vacinas_cliente = QGroupBox("Controle e Histórico de Vacinas")
         self.group_vacinas_cliente.setStyleSheet("QGroupBox { font-weight: bold; font-size: 13px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px; padding-top: 8px; }")
         self.group_vacinas_cliente.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -177,10 +196,11 @@ class ClientDetailTab(QWidget):
 
         content_layout.addWidget(self.middle_widget, stretch=3)
 
-        # --- COLUNA DIREITA: Lista de Pets + Ficha do Pet (Com a Foto no Topo) ---
+        # --- COLUNA DIREITA: Lista de Pets + Ficha do Pet ---
         right_container = QVBoxLayout()
 
         pets_group = QGroupBox("Pets Vinculados")
+        pets_group.setStyleSheet("QGroupBox { font-weight: bold; font-size: 13px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px; padding-top: 8px; }")
         pets_layout = QVBoxLayout(pets_group)
 
         self.pets_list_widget = QListWidget()
@@ -193,6 +213,7 @@ class ClientDetailTab(QWidget):
         self.add_pet_button.clicked.connect(self.prepare_new_pet_form)
         
         self.remove_pet_button = QPushButton("Remover Pet Selecionado")
+        self.remove_pet_button.setStyleSheet("color: #c53030; font-weight: bold;")
         self.remove_pet_button.clicked.connect(self.confirm_delete_pet)
 
         pets_btn_layout.addWidget(self.add_pet_button)
@@ -200,11 +221,11 @@ class ClientDetailTab(QWidget):
         pets_layout.addLayout(pets_btn_layout)
         right_container.addWidget(pets_group)
 
-        # Ficha do Pet (inicialmente oculta) - Contém a Foto no topo + formulário
+        # Ficha do Pet
         self.patient_group = QGroupBox("Ficha do Paciente (Pet)")
+        self.patient_group.setStyleSheet("QGroupBox { font-weight: bold; font-size: 13px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px; padding-top: 8px; }")
         patient_main_layout = QVBoxLayout(self.patient_group)
 
-        # Layout da Foto dentro da Ficha
         foto_layout = QVBoxLayout()
         self.lbl_foto_pet = QLabel("Sem foto")
         self.lbl_foto_pet.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -217,7 +238,7 @@ class ClientDetailTab(QWidget):
         self.btn_carregar_foto.clicked.connect(self.upload_pet_photo)
 
         self.btn_remover_foto = QPushButton("Remover")
-        self.btn_remover_foto.setStyleSheet("font-size: 11px; padding: 4px; color: #c53030;")
+        self.btn_remover_foto.setStyleSheet("color: #c53030; font-weight: bold;")
         self.btn_remover_foto.clicked.connect(self.remove_pet_photo)
 
         botoes_foto_layout.addWidget(self.btn_carregar_foto)
@@ -227,7 +248,6 @@ class ClientDetailTab(QWidget):
         foto_layout.addLayout(botoes_foto_layout)
         patient_main_layout.addLayout(foto_layout)
 
-        # Campos do Formulário do Pet
         patient_form_layout = QFormLayout()
 
         self.pet_name_input = QLineEdit()
@@ -286,6 +306,143 @@ class ClientDetailTab(QWidget):
 
         content_layout.addLayout(right_container, stretch=3)
         main_layout.addLayout(content_layout)
+
+    # --- FUNÇÃO DE HISTÓRICO DE PAGAMENTOS E PENDÊNCIAS ---
+    def load_historico_pagamentos(self, pet_id=None):
+        if not self.db or not self.client_id:
+            return
+
+        try:
+            self.db.cursor.execute("""
+                CREATE TABLE IF NOT EXISTS consultation_payments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    consultation_id INTEGER,
+                    payment_method TEXT,
+                    amount REAL,
+                    installments INTEGER,
+                    status TEXT,
+                    FOREIGN KEY(consultation_id) REFERENCES consultation_history(id) ON DELETE CASCADE
+                )
+            """)
+            self.db.conn.commit()
+
+            if pet_id:
+                query = """
+                    SELECT cp.id, ch.date, p.pet_name, cp.payment_method, cp.amount, cp.installments, cp.status
+                    FROM consultation_payments cp
+                    JOIN consultation_history ch ON cp.consultation_id = ch.id
+                    JOIN patients p ON ch.pet_id = p.id
+                    WHERE ch.client_id = ? AND ch.pet_id = ?
+                    ORDER BY ch.date DESC, cp.id DESC
+                """
+                self.db.cursor.execute(query, (self.client_id, pet_id))
+            else:
+                query = """
+                    SELECT cp.id, ch.date, p.pet_name, cp.payment_method, cp.amount, cp.installments, cp.status
+                    FROM consultation_payments cp
+                    JOIN consultation_history ch ON cp.consultation_id = ch.id
+                    JOIN patients p ON ch.pet_id = p.id
+                    WHERE ch.client_id = ?
+                    ORDER BY ch.date DESC, cp.id DESC
+                """
+                self.db.cursor.execute(query, (self.client_id,))
+
+            registros = self.db.cursor.fetchall()
+
+            filtro_atual = self.combo_filtro_pag.currentText()
+            if filtro_atual == "Apenas Pendências":
+                registros = [r for r in registros if r[6] and r[6].lower() == "pendente"]
+
+            total_pendente = 0.0
+            if pet_id:
+                self.db.cursor.execute("""
+                    SELECT SUM(cp.amount) FROM consultation_payments cp
+                    JOIN consultation_history ch ON cp.consultation_id = ch.id
+                    WHERE ch.client_id = ? AND ch.pet_id = ? AND LOWER(cp.status) = 'pendente'
+                """, (self.client_id, pet_id))
+            else:
+                self.db.cursor.execute("""
+                    SELECT SUM(cp.amount) FROM consultation_payments cp
+                    JOIN consultation_history ch ON cp.consultation_id = ch.id
+                    WHERE ch.client_id = ? AND LOWER(cp.status) = 'pendente'
+                """, (self.client_id,))
+            res_soma = self.db.cursor.fetchone()
+            if res_soma and res_soma[0]:
+                total_pendente = res_soma[0]
+
+            soma_str = f"R$ {total_pendente:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+            # Cor amarela unificada (#ffbf00) para o total de pendências
+            html_content = f"""
+                <div style="margin-bottom: 8px; font-size: 12px;">
+                    <b>Total em Pendências:</b> <span style="color: #ffbf00; font-weight: bold; font-size: 13px;">{soma_str}</span>
+                </div>
+            """
+
+            if registros:
+                html_content += """
+                    <table width="100%" cellspacing="0" cellpadding="4" style="font-size: 11px;">
+                        <tr style="font-weight: bold;">
+                            <td>ID</td>
+                            <td>Data</td>
+                            <td>Pet</td>
+                            <td>Método</td>
+                            <td>Valor</td>
+                            <td>Status</td>
+                        </tr>
+                """
+                for pay_id, data_atend, pet_name, metodo, valor, parcelas, status in registros:
+                    partes_data = data_atend.split("-")
+                    data_fmt = f"{partes_data[2]}/{partes_data[1]}/{partes_data[0]}" if len(partes_data) == 3 else data_atend
+                    val_str = f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                    
+                    status_cor = "color: #c53030; font-weight: bold;" if status and status.lower() == "pendente" else "color: #2f855a; font-weight: bold;"
+                    
+                    parcelas_str = f" ({parcelas}x)" if parcelas and parcelas > 1 else ""
+
+                    html_content += f"""
+                        <tr>
+                            <td><b>#{pay_id}</b></td>
+                            <td>{data_fmt}</td>
+                            <td>{pet_name}</td>
+                            <td>{metodo}{parcelas_str}</td>
+                            <td>{val_str}</td>
+                            <td><span style="{status_cor}">{status}</span></td>
+                        </tr>
+                    """
+                html_content += "</table>"
+            else:
+                html_content += "<i>Nenhum registro de pagamento encontrado.</i>"
+
+            self.txt_pagamentos_cliente.setHtml(html_content)
+
+        except Exception as e:
+            print(f"Erro ao carregar histórico de pagamentos: {e}")
+            self.txt_pagamentos_cliente.setHtml("<i>Erro ao carregar histórico de pagamentos.</i>")
+
+    def solicitar_exclusao_pagamento_por_id(self):
+        from PyQt6.QtWidgets import QInputDialog
+        id_str, ok = QInputDialog.getText(self, "Excluir Pagamento", "Digite o número do ID do pagamento que deseja apagar (ex: 5):")
+        
+        if ok and id_str.strip():
+            try:
+                id_limpo = id_str.replace("#", "").strip()
+                pay_id = int(id_limpo)
+
+                resposta = QMessageBox.question(
+                    self, "Confirmação", f"Deseja realmente excluir permanentemente o registro de pagamento ID #{pay_id}?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                )
+
+                if resposta == QMessageBox.StandardButton.Yes:
+                    self.db.cursor.execute("DELETE FROM consultation_payments WHERE id = ?", (pay_id,))
+                    self.db.conn.commit()
+                    QMessageBox.information(self, "Sucesso", f"Pagamento ID #{pay_id} removido com sucesso!")
+                    self.load_historico_pagamentos(self.current_selected_pet_id)
+            except ValueError:
+                QMessageBox.warning(self, "Erro", "Por favor, digite apenas números válidos para o ID.")
+            except Exception as e:
+                QMessageBox.critical(self, "Erro", f"Erro ao excluir pagamento: {e}")
 
     # --- FUNÇÕES DE EXAMES ---
     def anexar_exame_pet(self):
@@ -610,7 +767,7 @@ class ClientDetailTab(QWidget):
                 if registros and any(r[2] is not None for r in registros):
                     html_content = """
                         <table width="100%" cellspacing="0" cellpadding="4" style="font-size: 11px;">
-                            <tr style="background-color: #f2f2f2; font-weight: bold;">
+                            <tr style="font-weight: bold;">
                                 <td>Pet (Espécie)</td>
                                 <td>Vacina</td>
                                 <td>Aplicada em</td>
@@ -628,7 +785,7 @@ class ClientDetailTab(QWidget):
                                 <td><b>{pet_name}</b> ({especie})</td>
                                 <td>{vac_name}</td>
                                 <td>{app_fmt}</td>
-                                <td><span style="color: #d97706; font-weight: bold;">{due_fmt}</span></td>
+                                <td><span style="color: #ffbf00; font-weight: bold;">{due_fmt}</span></td>
                             </tr>
                         """
                     html_content += "</table>"
@@ -715,10 +872,11 @@ class ClientDetailTab(QWidget):
                 self.db.conn.commit()
                 QMessageBox.information(self, "Sucesso", "Alterações do pet salvas com sucesso!")
 
-            self._is_modified_flag = False
+            self._is_modified_flag = False  
             self.load_pets_list()
             self.load_historico_cliente(self.current_selected_pet_id)
             self.load_vacinas_cliente(self.current_selected_pet_id)
+            self.load_historico_pagamentos(self.current_selected_pet_id)
             
             if hasattr(self.main_window, "client_list_ui"):
                 self.main_window.client_list_ui.load_data()
@@ -747,7 +905,7 @@ class ClientDetailTab(QWidget):
         self.microchip_input.textChanged.connect(self.mark_as_modified)
 
     def mark_as_modified(self):
-        if not self._is_loading:
+        if not self.I_is_loading:
             self._is_modified_flag = True
 
     def has_unsaved_changes(self):
@@ -777,7 +935,7 @@ class ClientDetailTab(QWidget):
         self.load_pet_into_form(pet_data)
 
     def load_pet_into_form(self, pet):
-        self._is_loading = True
+        self.I_is_loading = True
         self.current_selected_pet_id = pet[0]
         self.pet_name_input.setText(str(pet[2] or ""))
         
@@ -811,7 +969,6 @@ class ClientDetailTab(QWidget):
             
         self.microchip_input.setText(str(pet[10] or ""))
         
-        # --- CARREGA A FOTO E OS EXAMES DO PET DO BANCO ---
         self.db.cursor.execute("SELECT photo_path FROM patients WHERE id = ?", (pet[0],))
         res_foto = self.db.cursor.fetchone()
         caminho_foto = res_foto[0] if res_foto else None
@@ -820,17 +977,18 @@ class ClientDetailTab(QWidget):
         self.load_exames_pet(pet[0])
 
         self._is_modified_flag = False
-        self._is_loading = False
+        self.I_is_loading = False
         self.patient_group.show()
 
         self.load_historico_cliente(pet[0])
         self.load_vacinas_cliente(pet[0])
+        self.load_historico_pagamentos(pet[0])
 
     def prepare_new_pet_form(self):
         if not self.check_unsaved_changes():
             return
 
-        self._is_loading = True
+        self.I_is_loading = True
         self.current_selected_pet_id = None 
         self.pets_list_widget.clearSelection()
         
@@ -844,15 +1002,16 @@ class ClientDetailTab(QWidget):
         self.weight_input.clear()
         self.microchip_input.clear()
         
-        self.display_pet_photo(None) # Limpa a foto
-        self.exames_list_widget.clear() # Limpa a lista de exames
+        self.display_pet_photo(None) 
+        self.exames_list_widget.clear() 
 
         self._is_modified_flag = False
-        self._is_loading = False
+        self.I_is_loading = False
         self.patient_group.show()
 
         self.load_historico_cliente(None)
         self.load_vacinas_cliente(None)
+        self.load_historico_pagamentos(None)
 
     def update_breeds(self, species):
         self.breed_input.clear()
@@ -874,7 +1033,7 @@ class ClientDetailTab(QWidget):
         self.breed_input.addItems(breeds)
 
     def on_species_changed(self, index):
-        if self._is_loading:
+        if self.I_is_loading:
             return
         species = self.species_input.currentText()
         if species == "Outro":
@@ -891,7 +1050,7 @@ class ClientDetailTab(QWidget):
             self.update_breeds(species)
 
     def on_breed_changed(self, index):
-        if self._is_loading:
+        if self.I_is_loading:
             return
         if self.breed_input.currentText() == "Outro...":
             custom_breed = self.open_custom_popup("Cadastrar Outra Raça", "Digite a raça:")
@@ -1047,9 +1206,10 @@ class ClientDetailTab(QWidget):
                 self.load_pets_list()
                 self.load_historico_cliente(None)
                 self.load_vacinas_cliente(None)
+                self.load_historico_pagamentos(None)
                 self.display_pet_photo(None)
                 self.exames_list_widget.clear()
-                if hasattr(self.main_window, "client_list_ui"):
+                if hasattr(main_window := self.main_window, "client_list_ui"):
                     self.main_window.client_list_ui.load_data()
             except Exception as e:
                 QMessageBox.critical(self, "Erro", f"Não foi possível remover o pet: {e}")
