@@ -1,10 +1,11 @@
+from datetime import datetime
 from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QCalendarWidget, 
     QListWidget, QPushButton, QLabel, QMessageBox, 
-    QListWidgetItem, QMenu, QComboBox, QCompleter
+    QListWidgetItem, QMenu, QComboBox, QCompleter, QGroupBox
 )
 from PyQt6.QtCore import QDate, Qt
-from PyQt6.QtGui import QAction, QKeyEvent, QTextCharFormat, QColor
+from PyQt6.QtGui import QAction, QKeyEvent, QTextCharFormat, QColor, QFont
 
 class AgendaItemWidget(QWidget):
     """Widget personalizado para cada linha da lista, exibindo o nome limpo e o menu de três pontinhos."""
@@ -98,21 +99,31 @@ class AgendaTab(QWidget):
     def init_ui(self):
         main_layout = QHBoxLayout(self)
 
-        # --- LADO ESQUERDO: Calendário Estilo Windows ---
+        # --- LADO ESQUERDO: Calendário + Resumo do Mês Agrupado ---
         left_layout = QVBoxLayout()
         self.calendar = QCalendarWidget()
         self.calendar.setNavigationBarVisible(True)
         self.calendar.clicked.connect(self.carregar_horarios_do_dia)
-        
-        # Conecta a mudança de mês para atualizar o destaque em amarelo no calendário
-        self.calendar.currentPageChanged.connect(self.pintar_dias_com_eventos)
+        self.calendar.currentPageChanged.connect(self.on_current_page_changed)
         
         left_layout.addWidget(QLabel("<b>Selecione o Dia:</b>"))
         left_layout.addWidget(self.calendar)
-        left_layout.addStretch()
+
+        # Bloco de Agendamentos do Mês (Abaixo do Calendário)
+        group_resumo_mes = QGroupBox("Todos os Agendamentos do Mês")
+        resumo_mes_layout = QVBoxLayout(group_resumo_mes)
+        
+        self.lista_resumo_mes = QListWidget()
+        self.lista_resumo_mes.setMinimumHeight(150)
+        # Se quiser que ao clicar num item do resumo ele selecione a data no calendário:
+        self.lista_resumo_mes.itemClicked.connect(self.ir_para_data_do_resumo)
+        
+        resumo_mes_layout.addWidget(self.lista_resumo_mes)
+        left_layout.addWidget(group_resumo_mes)
+
         main_layout.addLayout(left_layout, stretch=1)
 
-        # --- LADO DIREITO: Lista e Formulário Organizado ---
+        # --- LADO DIREITO: Lista do Dia e Formulário Organizado ---
         right_layout = QVBoxLayout()
         
         self.lbl_data_selecionada = QLabel("Agenda do dia: ")
@@ -172,10 +183,15 @@ class AgendaTab(QWidget):
 
         main_layout.addLayout(right_layout, stretch=1)
 
-        # Carrega os dados iniciais e pinta o calendário do mês atual
+        # Carrega os dados iniciais e atualiza as listagens/calendário
         self.carregar_dados_clientes()
         self.carregar_horarios_do_dia(self.calendar.selectedDate())
-        self.pintar_dias_com_eventos(QDate.currentDate().year(), QDate.currentDate().month())
+        self.atualizar_resumo_mes(self.calendar.yearShown(), self.calendar.monthShown())
+
+    def on_current_page_changed(self, year, month):
+        """Chamado quando a usuária muda o mês no calendário."""
+        self.pintar_dias_com_eventos(year, month)
+        self.atualizar_resumo_mes(year, month)
 
     def pintar_dias_com_eventos(self, year, month):
         """Busca no banco de dados os dias do mês visível que possuem agendamentos e pinta de amarelo."""
@@ -183,12 +199,11 @@ class AgendaTab(QWidget):
             return
         try:
             formato_amarelo = QTextCharFormat()
-            formato_amarelo.setForeground(QColor("#ffbf00")) # Texto escuro
+            formato_amarelo.setForeground(QColor("#ffbf00"))
 
             primeiro_dia = QDate(year, month, 1)
             ultimo_dia = QDate(year, month, primeiro_dia.daysInMonth())
 
-            # Reseta o formato do mês inteiro antes de pintar
             d_atual = primeiro_dia
             while d_atual <= ultimo_dia:
                 self.calendar.setDateTextFormat(d_atual, QTextCharFormat())
@@ -212,6 +227,95 @@ class AgendaTab(QWidget):
                     self.calendar.setDateTextFormat(qdate_evento, formato_amarelo)
         except Exception as e:
             print(f"Erro ao pintar dias no calendário da agenda: {e}")
+
+    def atualizar_resumo_mes(self, year, month):
+        """Preenche a lista inferior com todos os agendamentos do mês agrupados por dia e com o dia da semana."""
+        self.lista_resumo_mes.clear()
+        if not self.db:
+            return
+
+        primeiro_dia = QDate(year, month, 1)
+        ultimo_dia = QDate(year, month, primeiro_dia.daysInMonth())
+        inicio_str = primeiro_dia.toString("yyyy-MM-dd")
+        fim_str = ultimo_dia.toString("yyyy-MM-dd")
+
+        dias_da_semana = {
+            1: "Segunda-feira",
+            2: "Terça-feira",
+            3: "Quarta-feira",
+            4: "Quinta-feira",
+            5: "Sexta-feira",
+            6: "Sábado",
+            7: "Domingo"
+        }
+
+        try:
+            self.db.cursor.execute("""
+                SELECT date, time, client_name, pet_name, service_type 
+                FROM appointments 
+                WHERE date BETWEEN ? AND ? 
+                ORDER BY date ASC, time ASC
+            """, (inicio_str, fim_str))
+            
+            registros = self.db.cursor.fetchall()
+            
+            if not registros:
+                item_vazio = QListWidgetItem("Nenhum agendamento neste mês.")
+                item_vazio.setFlags(Qt.ItemFlag.NoItemFlags) # Desabilita clique
+                self.lista_resumo_mes.addItem(item_vazio)
+                return
+
+            dias_agrupados = {}
+            for data_db, hora, tutor, pet, servico in registros:
+                if data_db not in dias_agrupados:
+                    dias_agrupados[data_db] = []
+                dias_agrupados[data_db].append((hora, tutor, pet, servico))
+
+            for data_db, consultas in dias_agrupados.items():
+                partes = data_db.split("-")
+                if len(partes) == 3:
+                    ano, mes, dia = int(partes[0]), int(partes[1]), int(partes[2])
+                    qdate = QDate(ano, mes, dia)
+                    data_fmt = f"{dia:02d}/{mes:02d}/{ano}"
+                    nome_dia_sem = dias_da_semana.get(qdate.dayOfWeek(), "")
+
+                    # 1. Adiciona o cabeçalho do dia da semana centralizado e em destaque
+                    header_text = f"--- ({nome_dia_sem}) ---"
+                    item_header = QListWidgetItem(header_text)
+                    item_header.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                    font = item_header.font()
+                    font.setBold(True)
+                    item_header.setFont(font)
+                    item_header.setForeground(QColor("#a0a0a0"))
+                    item_header.setFlags(Qt.ItemFlag.NoItemFlags) # Apenas informativo
+                    self.lista_resumo_mes.addItem(item_header)
+
+                    # 2. Adiciona cada agendamento daquele dia
+                    for hora, tutor, pet, servico in consultas:
+                        partes_nome = tutor.split()
+                        nome_limpo = f"{partes_nome[0]} {partes_nome[1]}" if len(partes_nome) >= 2 else tutor
+                        
+                        texto_linha = f"{data_fmt}  {hora}h  -  {nome_limpo} - {pet} ({servico})"
+                        item_linha = QListWidgetItem(texto_linha)
+                        # Guarda a data no UserRole para facilitar se quiser clicar e ir para o dia
+                        item_linha.setData(Qt.ItemDataRole.UserRole, qdate)
+                        self.lista_resumo_mes.addItem(item_linha)
+
+                    # 3. Adiciona um separador visual em branco ou linha entre os dias
+                    item_sep = QListWidgetItem("--------------------------------------------------")
+                    item_sep.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                    item_sep.setFlags(Qt.ItemFlag.NoItemFlags)
+                    self.lista_resumo_mes.addItem(item_sep)
+
+        except Exception as e:
+            print(f"Erro ao carregar resumo do mês: {e}")
+
+    def ir_para_data_do_resumo(self, item):
+        """Ao clicar em um agendamento na lista do mês, seleciona automaticamente aquele dia no calendário."""
+        qdate = item.data(Qt.ItemDataRole.UserRole)
+        if qdate and isinstance(qdate, QDate):
+            self.calendar.setSelectedDate(qdate)
+            self.carregar_horarios_do_dia(qdate)
 
     def carregar_dados_clientes(self):
         if not self.db:
@@ -351,8 +455,11 @@ class AgendaTab(QWidget):
             self.limpar_formulario()
             self.carregar_horarios_do_dia(self.calendar.selectedDate())
             
-            # Atualiza o destaque em amarelo no calendário após salvar
-            self.pintar_dias_com_eventos(self.calendar.yearShown(), self.calendar.monthShown())
+            # Atualiza o destaque em amarelo no calendário e a lista resumo do mês
+            ano_atual = self.calendar.yearShown()
+            mes_atual = self.calendar.monthShown()
+            self.pintar_dias_com_eventos(ano_atual, mes_atual)
+            self.atualizar_resumo_mes(ano_atual, mes_atual)
             
         except Exception as e:
             QMessageBox.critical(self, "Erro", f"Erro ao salvar no banco: {e}")
@@ -398,8 +505,11 @@ class AgendaTab(QWidget):
                 QMessageBox.information(self, "Sucesso", "Agendamento excluído!")
                 self.carregar_horarios_do_dia(self.calendar.selectedDate())
                 
-                # Atualiza o destaque em amarelo no calendário após excluir
-                self.pintar_dias_com_eventos(self.calendar.yearShown(), self.calendar.monthShown())
+                # Atualiza o calendário e o resumo do mês
+                ano_atual = self.calendar.yearShown()
+                mes_atual = self.calendar.monthShown()
+                self.pintar_dias_com_eventos(ano_atual, mes_atual)
+                self.atualizar_resumo_mes(ano_atual, mes_atual)
             except Exception as e:
                 QMessageBox.critical(self, "Erro", f"Erro ao excluir: {e}")
 

@@ -2,12 +2,159 @@ from datetime import datetime
 from PyQt6.QtWidgets import (
     QMainWindow, QTabBar, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QMessageBox, QListWidget, QListWidgetItem, QPushButton, QDateEdit, 
-    QGroupBox, QFormLayout, QTextEdit, QTextBrowser, QLineEdit, QCheckBox, QGridLayout
+    QGroupBox, QFormLayout, QTextEdit, QTextBrowser, QLineEdit, QCheckBox, QGridLayout,
+    QDialog, QDialogButtonBox
 )
 from PyQt6.QtCore import QDate, Qt
 from PyQt6.QtGui import QIcon, QTextCharFormat, QColor
 from ui_client_list import ClientListUI
 from ui_agenda import AgendaTab, AgendaItemWidget
+
+class MoedaLineEdit(QLineEdit):
+    """Campo de texto personalizado que formata automaticamente o valor para o padrão monetário (ex: 1.000,00)."""
+    def __init__(self, parent=None, callback_mudanca=None):
+        super().__init__(parent)
+        self.callback_mudanca = callback_mudanca
+        self.setPlaceholderText("0,00")
+
+    def focusOutEvent(self, event):
+        super().focusOutEvent(event)
+        self.formatar_valor()
+        if self.callback_mudanca:
+            self.callback_mudanca()
+
+    def formatar_valor(self):
+        texto = self.text().strip()
+        if not texto:
+            return
+        
+        try:
+            texto_limpo = texto.replace("R$", "").replace(".", "").replace(",", ".").strip()
+            valor = float(texto_limpo)
+            valor_formatado = f"{valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            self.setText(valor_formatado)
+        except ValueError:
+            pass
+
+
+class DialogoDivisaoPagamento(QDialog):
+    """Janela pop-up para gerenciar múltiplas formas de pagamento com cálculo automático em tempo real."""
+    def __init__(self, parent=None, valor_total_sugerido=0.0):
+        super().__init__(parent)
+        self.setWindowTitle("Dividir Pagamento")
+        self.setMinimumWidth(450)
+        self.valor_total = valor_total_sugerido
+        self.pagamentos_resultado = []
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QVBoxLayout(self)
+
+        val_sug_str = f"{self.valor_total:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if self.valor_total > 0 else "0,00"
+        self.lbl_info = QLabel(f"<b>Valor Total da Consulta: R$ {val_sug_str}</b>")
+        layout.addWidget(self.lbl_info)
+
+        grid_pag = QGridLayout()
+        
+
+        grid_pag.addWidget(QLabel("PIX: R$"), 0, 0)
+        self.txt_pix = MoedaLineEdit(callback_mudanca=self.calcular_restante_pendente)
+        grid_pag.addWidget(self.txt_pix, 0, 1)
+
+        grid_pag.addWidget(QLabel("Dinheiro: R$"), 1, 0)
+        self.txt_dinheiro = MoedaLineEdit(callback_mudanca=self.calcular_restante_pendente)
+        grid_pag.addWidget(self.txt_dinheiro, 1, 1)
+
+        grid_pag.addWidget(QLabel("Transferência: R$"), 2, 0)
+        self.txt_transf = MoedaLineEdit(callback_mudanca=self.calcular_restante_pendente)
+        grid_pag.addWidget(self.txt_transf, 2, 1)
+
+        grid_pag.addWidget(QLabel("Débito: R$"), 3, 0)
+        self.txt_debito = MoedaLineEdit(callback_mudanca=self.calcular_restante_pendente)
+        grid_pag.addWidget(self.txt_debito, 3, 1)
+
+        grid_pag.addWidget(QLabel("Crédito à vista: R$"), 4, 0)
+        self.txt_cred_vista = MoedaLineEdit(callback_mudanca=self.calcular_restante_pendente)
+        grid_pag.addWidget(self.txt_cred_vista, 4, 1)
+
+        grid_pag.addWidget(QLabel("Crédito parcelado: R$"), 5, 0)
+        self.txt_cred_parc = MoedaLineEdit(callback_mudanca=self.calcular_restante_pendente)
+        grid_pag.addWidget(self.txt_cred_parc, 5, 1)
+        
+        self.txt_parcelas = QLineEdit()
+        self.txt_parcelas.setPlaceholderText("Qtd. vezes")
+        grid_pag.addWidget(self.txt_parcelas, 5, 3)
+
+        grid_pag.addWidget(QLabel("<b>Valor Pendente: R$</b>"), 6, 0)
+        self.txt_pendente = MoedaLineEdit()
+        if self.valor_total > 0:
+            self.txt_pendente.setText(val_sug_str)
+        grid_pag.addWidget(self.txt_pendente, 6, 1)
+
+        layout.addLayout(grid_pag)
+
+        botoes = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        botoes.accepted.connect(self.validar_e_salvar)
+        botoes.rejected.connect(self.reject)
+        layout.addWidget(botoes)
+
+    def calcular_restante_pendente(self):
+        try:
+            def conv(campo):
+                txt = campo.text().replace(".", "").replace(",", ".").strip()
+                return float(txt) if txt else 0.0
+
+            total_pago = (
+                conv(self.txt_dinheiro) + 
+                conv(self.txt_pix) + 
+                conv(self.txt_transf) + 
+                conv(self.txt_debito) + 
+                conv(self.txt_cred_vista) + 
+                conv(self.txt_cred_parc)
+            )
+
+            restante = self.valor_total - total_pago
+            if restante < 0:
+                restante = 0.0
+
+            restante_str = f"{restante:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            self.txt_pendente.setText(restante_str)
+        except ValueError:
+            pass
+
+    def validar_e_salvar(self):
+        try:
+            def converter_valor(campo):
+                txt = campo.text().replace(".", "").replace(",", ".").strip()
+                return float(txt) if txt else 0.0
+
+            dinheiro = converter_valor(self.txt_dinheiro)
+            pix = converter_valor(self.txt_pix)
+            transf = converter_valor(self.txt_transf)
+            debito = converter_valor(self.txt_debito)
+            cred_vista = converter_valor(self.txt_cred_vista)
+            cred_parc = converter_valor(self.txt_cred_parc)
+            
+            parcelas = int(self.txt_parcelas.text() or 1) if cred_parc > 0 else 1
+            pendente = converter_valor(self.txt_pendente)
+
+            self.pagamentos_resultado = []
+            if dinheiro > 0: self.pagamentos_resultado.append(("Dinheiro", dinheiro, 1, "Pago"))
+            if pix > 0: self.pagamentos_resultado.append(("PIX", pix, 1, "Pago"))
+            if transf > 0: self.pagamentos_resultado.append(("Transferência", transf, 1, "Pago"))
+            if debito > 0: self.pagamentos_resultado.append(("Débito", debito, 1, "Pago"))
+            if cred_vista > 0: self.pagamentos_resultado.append(("Crédito à vista", cred_vista, 1, "Pago"))
+            if cred_parc > 0: self.pagamentos_resultado.append(("Crédito parcelado", cred_parc, parcelas, "Pago"))
+            if pendente > 0: self.pagamentos_resultado.append(("Valor Pendente", pendente, 1, "Pendente"))
+
+            if not self.pagamentos_resultado:
+                QMessageBox.warning(self, "Aviso", "Informe ao menos uma forma de pagamento ou valor pendente.")
+                return
+
+            self.accept()
+        except ValueError:
+            QMessageBox.critical(self, "Erro", "Verifique se os valores numéricos e parcelas foram digitados corretamente.")
+
 
 class AgendaTableWidget(QWidget):
     """Widget com histórico inteligente, exibições de IDs, lembretes, vacinas e calendário dinâmico."""
@@ -92,7 +239,7 @@ class AgendaTableWidget(QWidget):
 
         main_layout.addLayout(left_layout, stretch=2)
 
-        # ================= COLUNA 2 (CENTRO): RESUMO + VACINAS SEPARADAS + OUTROS =================
+        # ================= COLUNA 2 (CENTRO): RESUMO + VACINAS SEPARADAS + PAGAMENTO + BOTÃO SALVAR =================
         center_layout = QVBoxLayout()
         
         # 1. Caixa de Resumo do Atendimento do Dia
@@ -156,9 +303,56 @@ class AgendaTableWidget(QWidget):
 
         center_layout.addWidget(self.group_outros)
 
-        # Botão unificado de salvar
+        # 4. Bloco de Pagamento Rápido na Base da Coluna Central (Ordem correta com Pendente por último)
+        self.group_pagamento = QGroupBox("Forma de Pagamento")
+        self.group_pagamento.setStyleSheet("QGroupBox { font-weight: bold; font-size: 13px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px; padding-top: 8px; }")
+        
+        pag_layout = QVBoxLayout(self.group_pagamento)
+        
+        valor_layout = QHBoxLayout()
+        valor_layout.addWidget(QLabel("Valor do Atendimento R$:"))
+        self.txt_valor_atendimento = MoedaLineEdit()
+        valor_layout.addWidget(self.txt_valor_atendimento)
+        pag_layout.addLayout(valor_layout)
+
+        self.chk_pag_pix = QCheckBox("PIX")
+        self.chk_pag_dinheiro = QCheckBox("Dinheiro")
+        self.chk_pag_transf = QCheckBox("Transferência")
+        self.chk_pag_debito = QCheckBox("Débito")
+        self.chk_pag_credito = QCheckBox("Crédito à vista")
+        self.chk_pag_cred_parc = QCheckBox("Crédito parcelado")
+        self.chk_pag_pendente = QCheckBox("Valor Pendente")
+        
+        # Adiciona as opções simples primeiro
+        for c in [self.chk_pag_pix, self.chk_pag_dinheiro, self.chk_pag_transf, self.chk_pag_debito, self.chk_pag_credito]:
+            c.setStyleSheet("font-weight: normal; font-size: 12px;")
+            pag_layout.addWidget(c)
+        
+        # Adiciona o Crédito Parcelado com a caixa de texto ao lado
+        cred_parc_layout = QHBoxLayout()
+        self.txt_qtd_parcelas_main = QLineEdit()
+        self.txt_qtd_parcelas_main.setPlaceholderText("Qtd. vezes")
+        self.txt_qtd_parcelas_main.setMaximumWidth(90)
+        cred_parc_layout.addWidget(self.chk_pag_cred_parc)
+        cred_parc_layout.addWidget(self.txt_qtd_parcelas_main)
+        cred_parc_layout.addStretch()
+
+        self.chk_pag_cred_parc.setStyleSheet("font-weight: normal; font-size: 12px;")
+        pag_layout.addLayout(cred_parc_layout)
+
+        # Adiciona o Valor Pendente obrigatoriamente por ÚLTIMO embaixo de tudo
+        self.chk_pag_pendente.setStyleSheet("font-weight: normal; font-size: 12px;")
+        pag_layout.addWidget(self.chk_pag_pendente)
+
+        self.btn_dividir_pagamento = QPushButton("Dividir Pagamento")
+        self.btn_dividir_pagamento.clicked.connect(self.abrir_popup_divisao)
+        pag_layout.addWidget(self.btn_dividir_pagamento)
+
+        center_layout.addWidget(self.group_pagamento)
+
+        # Botão unificado de salvar no centro exato
         self.btn_salvar_atendimento = QPushButton("Salvar Atendimento")
-        self.btn_salvar_atendimento.setStyleSheet("font-weight: bold; padding: 6px;")
+        self.btn_salvar_atendimento.setStyleSheet("font-weight: bold; padding: 8px; font-size: 14px;")
         self.btn_salvar_atendimento.clicked.connect(self.salvar_ou_atualizar_atendimento)
         center_layout.addWidget(self.btn_salvar_atendimento)
 
@@ -180,7 +374,6 @@ class AgendaTableWidget(QWidget):
         self.date_edit.setDisplayFormat("dd/MM/yyyy")
         self.date_edit.dateChanged.connect(self.carregar_horarios)
 
-        # Configuração do calendário pop-up para pintar os dias com eventos de amarelo
         calendario_popup = self.date_edit.calendarWidget()
         if calendario_popup:
             calendario_popup.currentPageChanged.connect(self.pintar_dias_com_eventos)
@@ -207,6 +400,20 @@ class AgendaTableWidget(QWidget):
         main_layout.addLayout(right_layout, stretch=2)
         self.carregar_horarios()
 
+    def abrir_popup_divisao(self):
+        try:
+            txt = self.txt_valor_atendimento.text().replace(".", "").replace(",", ".").strip()
+            total = float(txt) if txt else 0.0
+        except ValueError:
+            total = 0.0
+
+        dlg = DialogoDivisaoPagamento(self, valor_total_sugerido=total)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self.pagamentos_personalizados = dlg.pagamentos_resultado
+            QMessageBox.information(self, "Sucesso", "Divisão de pagamento configurada com sucesso! Clique em 'Salvar Atendimento' para registrar.")
+        else:
+            self.pagamentos_personalizados = None
+
     def showEvent(self, event):
         super().showEvent(event)
         self.carregar_horarios()
@@ -215,7 +422,6 @@ class AgendaTableWidget(QWidget):
             self.pintar_dias_com_eventos(cal.yearShown(), cal.monthShown())
 
     def pintar_dias_com_eventos(self, year, month):
-        """Busca no banco de dados os dias do mês visível que possuem agendamentos e pinta de amarelo."""
         if not self.db:
             return
         try:
@@ -224,7 +430,7 @@ class AgendaTableWidget(QWidget):
                 return
 
             formato_amarelo = QTextCharFormat()
-            formato_amarelo.setForeground(QColor("#ffbf00")) # Texto escuro
+            formato_amarelo.setForeground(QColor("#ffbf00"))
 
             primeiro_dia = QDate(year, month, 1)
             ultimo_dia = QDate(year, month, primeiro_dia.daysInMonth())
@@ -364,7 +570,6 @@ class AgendaTableWidget(QWidget):
             self.limpar_detalhes()
 
     def atualizar_paineis_atendimento(self, pet_id):
-        """Atualiza a caixa de histórico exibindo as duas últimas consultas e seus IDs."""
         data_selecionada_str = self.date_edit.date().toString("yyyy-MM-dd")
 
         try:
@@ -416,7 +621,6 @@ class AgendaTableWidget(QWidget):
         if not texto:
             texto = f"- {self.current_service_type}"
         
-        # Coleta as vacinas marcadas
         vacinas_marcadas = []
         if self.chk_v8.isChecked(): vacinas_marcadas.append("V8")
         if self.chk_v10.isChecked(): vacinas_marcadas.append("V10")
@@ -483,12 +687,45 @@ class AgendaTableWidget(QWidget):
         try:
             if self.current_historico_id:
                 self.db.atualizar_historico(self.current_historico_id, texto)
-                QMessageBox.information(self, "Sucesso", "Atendimento atualizado com sucesso!")
+                historico_id = self.current_historico_id
+                msg = "Atendimento atualizado com sucesso!"
             else:
-                self.db.salvar_historico(self.current_pet_id, self.current_client_id, data_str, texto)
-                QMessageBox.information(self, "Sucesso", "Atendimento salvo com sucesso!")
+                historico_id = self.db.salvar_historico(self.current_pet_id, self.current_client_id, data_str, texto)
+                msg = "Atendimento salvo com sucesso!"
 
-            # Reseta os campos
+            if hasattr(self, 'pagamentos_personalizados') and self.pagamentos_personalizados:
+                self.db.salvar_pagamentos(historico_id, self.pagamentos_personalizados)
+                self.pagamentos_personalizados = None
+            else:
+                try:
+                    txt_v = self.txt_valor_atendimento.text().replace(".", "").replace(",", ".").strip()
+                    valor_total = float(txt_v) if txt_v else 0.0
+                except ValueError:
+                    valor_total = 0.0
+
+                metodo_escolhido = "Dinheiro"
+                status_pagamento = "Pago"
+                parcelas = 1
+
+                if self.chk_pag_pix.isChecked(): metodo_escolhido = "PIX"
+                elif self.chk_pag_transf.isChecked(): metodo_escolhido = "Transferência"
+                elif self.chk_pag_debito.isChecked(): metodo_escolhido = "Débito"
+                elif self.chk_pag_credito.isChecked(): metodo_escolhido = "Crédito à vista"
+                elif self.chk_pag_pendente.isChecked():
+                    metodo_escolhido = "Valor Pendente"
+                    status_pagamento = "Pendente"
+                elif self.chk_pag_cred_parc.isChecked():
+                    metodo_escolhido = "Crédito parcelado"
+                    try:
+                        parcelas = int(self.txt_qtd_parcelas_main.text() or 1)
+                    except ValueError:
+                        parcelas = 1
+
+                if valor_total > 0:
+                    self.db.salvar_pagamentos(historico_id, [(metodo_escolhido, valor_total, parcelas, status_pagamento)])
+
+            QMessageBox.information(self, "Sucesso", msg)
+
             self.chk_v8.setChecked(False)
             self.chk_v10.setChecked(False)
             self.chk_v4.setChecked(False)
@@ -499,10 +736,18 @@ class AgendaTableWidget(QWidget):
             self.chk_feLV.setChecked(False)
             self.txt_vermifugo_opc.clear()
             self.txt_antipulgas_opc.clear()
+            self.txt_valor_atendimento.clear()
+            self.chk_pag_pix.setChecked(False)
+            self.chk_pag_dinheiro.setChecked(False)
+            self.chk_pag_transf.setChecked(False)
+            self.chk_pag_debito.setChecked(False)
+            self.chk_pag_credito.setChecked(False)
+            self.chk_pag_pendente.setChecked(False)
+            self.chk_pag_cred_parc.setChecked(False)
+            self.txt_qtd_parcelas_main.clear()
 
             self.atualizar_paineis_atendimento(self.current_pet_id)
             
-            # Atualiza o calendário para pintar o dia recém-salvo
             cal = self.date_edit.calendarWidget()
             if cal:
                 self.pintar_dias_com_eventos(cal.yearShown(), cal.monthShown())
@@ -522,6 +767,7 @@ class AgendaTableWidget(QWidget):
         self.lbl_det_peso.setText("-")
         self.txt_atendimento.clear()
         self.txt_historico.clear()
+        self.pagamentos_personalizados = None
         self.chk_v8.setChecked(False)
         self.chk_v10.setChecked(False)
         self.chk_v4.setChecked(False)
@@ -532,6 +778,15 @@ class AgendaTableWidget(QWidget):
         self.chk_feLV.setChecked(False)
         self.txt_vermifugo_opc.clear()
         self.txt_antipulgas_opc.clear()
+        self.txt_valor_atendimento.clear()
+        self.chk_pag_pix.setChecked(False)
+        self.chk_pag_dinheiro.setChecked(False)
+        self.chk_pag_transf.setChecked(False)
+        self.chk_pag_debito.setChecked(False)
+        self.chk_pag_credito.setChecked(False)
+        self.chk_pag_pendente.setChecked(False)
+        self.chk_pag_cred_parc.setChecked(False)
+        self.txt_qtd_parcelas_main.clear()
         self.btn_salvar_atendimento.setText("Salvar Atendimento")
 
     def preparar_edicao(self, reg_id):
@@ -553,7 +808,6 @@ class AgendaTableWidget(QWidget):
                 QMessageBox.information(self, "Sucesso", "Agendamento excluído!")
                 self.carregar_horarios()
                 
-                # Atualiza o calendário após a exclusão
                 cal = self.date_edit.calendarWidget()
                 if cal:
                     self.pintar_dias_com_eventos(cal.yearShown(), cal.monthShown())

@@ -57,6 +57,7 @@ class Database:
                     age TEXT,
                     weight REAL,
                     microchip TEXT,
+                    photo_path TEXT,
                     FOREIGN KEY (client_id) REFERENCES clients (id)
                 )
             """)
@@ -64,10 +65,10 @@ class Database:
             self.cursor.execute("""
                 CREATE TABLE IF NOT EXISTS appointments (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    date TEXT NOT NULL,        -- Formato "YYYY-MM-DD"
-                    time TEXT NOT NULL,        -- Formato "HH:MM"
+                    date TEXT NOT NULL,      -- Formato "YYYY-MM-DD"
+                    time TEXT NOT NULL,      -- Formato "HH:MM"
                     client_name TEXT NOT NULL,  -- Nome do Tutor
-                    pet_name TEXT NOT NULL,     -- Nome do Pet
+                    pet_name TEXT NOT NULL,    -- Nome do Pet
                     service_type TEXT NOT NULL  -- Ex: Consulta, Vacina, Retorno
                 )
             """)
@@ -94,10 +95,34 @@ class Database:
                     FOREIGN KEY (pet_id) REFERENCES patients (id) ON DELETE CASCADE
                 )
             """)
+
+            # Tabela de Resultados de Exames dos Pets
+            self.cursor.execute("""
+                CREATE TABLE IF NOT EXISTS pet_exams (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    pet_id INTEGER,
+                    file_name TEXT,
+                    file_path TEXT,
+                    FOREIGN KEY(pet_id) REFERENCES patients(id) ON DELETE CASCADE
+                )
+            """)
+
+            # Nova tabela para pagamentos divididos e valores pendentes
+            self.cursor.execute("""
+                CREATE TABLE IF NOT EXISTS consultation_payments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    consultation_id INTEGER,
+                    payment_method TEXT NOT NULL,
+                    amount REAL NOT NULL,
+                    installments INTEGER DEFAULT 1,
+                    status TEXT DEFAULT 'Pago', -- 'Pago' ou 'Pendente'
+                    FOREIGN KEY (consultation_id) REFERENCES consultation_history (id) ON DELETE CASCADE
+                )
+            """)
             
             self.conn.commit()
-                        
             print("Tables verified/created successfully with full attributes.")
+            
         except sqlite3.Error as e:
             print(f"Error creating tables: {e}")
 
@@ -110,8 +135,55 @@ class Database:
             """, (pet_id, client_id, date, notes))
             self.conn.commit()
             print("Histórico salvo com sucesso!")
+            return self.cursor.lastrowid
         except sqlite3.Error as e:
             print(f"Erro ao salvar histórico: {e}")
+            self.conn.rollback()
+            return None
+
+    def salvar_pagamentos(self, consultation_id, pagamentos):
+        """Salva a lista de pagamentos (ou divisão) de um atendimento."""
+        try:
+            for pag in pagamentos:
+                # pag espera: (payment_method, amount, installments, status)
+                self.cursor.execute("""
+                    INSERT INTO consultation_payments (consultation_id, payment_method, amount, installments, status)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (consultation_id, pag[0], pag[1], pag[2], pag[3]))
+            self.conn.commit()
+            print("Pagamentos salvos com sucesso!")
+        except sqlite3.Error as e:
+            print(f"Erro ao salvar pagamentos: {e}")
+            self.conn.rollback()
+
+    def get_valores_pendentes(self):
+        """Busca todos os valores pendentes (a receber) com dados do cliente e pet."""
+        try:
+            self.cursor.execute("""
+                SELECT p.id, c.first_name || ' ' || IFNULL(c.last_name, ''), pt.pet_name, h.date, p.amount
+                FROM consultation_payments p
+                JOIN consultation_history h ON p.consultation_id = h.id
+                JOIN clients c ON h.client_id = c.id
+                JOIN patients pt ON h.pet_id = pt.id
+                WHERE p.status = 'Pendente'
+            """)
+            return self.cursor.fetchall()
+        except sqlite3.Error as e:
+            print(f"Erro ao buscar valores pendentes: {e}")
+            return []
+
+    def quitar_pendencia(self, payment_id, novo_metodo):
+        """Atualiza o status de um valor pendente para Pago."""
+        try:
+            self.cursor.execute("""
+                UPDATE consultation_payments 
+                SET status = 'Pago', payment_method = ? 
+                WHERE id = ?
+            """, (novo_metodo, payment_id))
+            self.conn.commit()
+            print("Pendência quitada com sucesso!")
+        except sqlite3.Error as e:
+            print(f"Erro ao quitar pendência: {e}")
             self.conn.rollback()
 
     def get_historico_by_pet_id(self, pet_id):
@@ -279,7 +351,7 @@ class Database:
             return []
 
     def delete_client(self, client_id):
-        """Remove o cliente e todos os seus pets do banco de dados."""
+        """Passa a remover o cliente e todos os seus pets do banco de dados."""
         try:
             self.cursor.execute("DELETE FROM patients WHERE client_id = ?", (client_id,))
             self.cursor.execute("DELETE FROM clients WHERE id = ?", (client_id,))

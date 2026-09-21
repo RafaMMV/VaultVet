@@ -1,10 +1,15 @@
 from datetime import datetime
+import os
+import shutil
+import subprocess
+import sys
 from PyQt6.QtWidgets import (
     QWidget, QLineEdit, QFormLayout, QVBoxLayout, 
     QPushButton, QHBoxLayout, QGroupBox, QLabel, 
-    QListWidget, QMessageBox, QComboBox, QDialog, QDialogButtonBox, QListWidgetItem, QTextBrowser
+    QListWidget, QMessageBox, QComboBox, QDialog, QDialogButtonBox, QListWidgetItem, QTextBrowser, QFileDialog, QSizePolicy
 )
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QPixmap
 
 
 class ClientDetailTab(QWidget):
@@ -22,7 +27,8 @@ class ClientDetailTab(QWidget):
         self.init_ui()
         self.load_client_data()
         self.load_pets_list()
-        self.load_historico_cliente()
+        self.load_historico_cliente(None) # Carrega o histórico geral de todos os pets inicialmente
+        self.load_vacinas_cliente(None)   # Carrega o histórico de vacinas geral inicialmente
         self.connect_change_trackers()
 
         # Lógica de seleção automática:
@@ -49,7 +55,7 @@ class ClientDetailTab(QWidget):
         self.save_client_button.clicked.connect(self.save_client_changes)
 
         self.delete_client_button = QPushButton("Remover Cliente")
-        self.delete_client_button.setStyleSheet("font-weight: bold;")
+        self.delete_client_button.setStyleSheet("font-weight: bold;color: #c53030;")
         self.delete_client_button.clicked.connect(self.confirm_delete_client)
 
         top_layout.addWidget(self.title_label)
@@ -58,10 +64,11 @@ class ClientDetailTab(QWidget):
         top_layout.addWidget(self.delete_client_button)
         main_layout.addLayout(top_layout)
 
-        # Layout dividido em duas colunas (Dados do Tutor + Histórico | Gestão de Pets)
+        # Layout dividido em TRÊS colunas (Esquerda | Meio | Direita)
+        # Ajuste o stretch das colunas aqui se quiser mudar a largura geral delas
         content_layout = QHBoxLayout()
 
-        # --- COLUNA ESQUERDA: Dados do Tutor + Histórico Geral do Cliente ---
+        # --- COLUNA ESQUERDA: Dados do Tutor + Histórico de Atendimentos ---
         left_container = QVBoxLayout()
 
         tutor_group = QGroupBox("Dados do Tutor")
@@ -95,16 +102,15 @@ class ClientDetailTab(QWidget):
 
         left_container.addWidget(tutor_group)
 
-        # Bloco de Histórico Completo de Atendimentos do Cliente
-        self.group_historico_cliente = QGroupBox("Histórico de Atendimentos dos Pets")
+        # Bloco de Histórico de Atendimentos dos Pets
+        self.group_historico_cliente = QGroupBox("Histórico de Atendimentos")
         self.group_historico_cliente.setStyleSheet("QGroupBox { font-weight: bold; font-size: 13px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px; padding-top: 8px; }")
         
         hist_cliente_layout = QVBoxLayout(self.group_historico_cliente)
         self.txt_historico_cliente = QTextBrowser()
-        self.txt_historico_cliente.setPlaceholderText("Nenhum atendimento registrado para os pets deste cliente.")
+        self.txt_historico_cliente.setPlaceholderText("Nenhum atendimento registrado.")
         hist_cliente_layout.addWidget(self.txt_historico_cliente)
 
-        # Botão para excluir por ID diretamente na aba do cliente
         btn_excluir_hist_layout = QHBoxLayout()
         self.btn_excluir_hist_cli = QPushButton("Excluir Atendimento por ID")
         self.btn_excluir_hist_cli.setStyleSheet("font-size: 11px; padding: 4px;")
@@ -114,9 +120,64 @@ class ClientDetailTab(QWidget):
         hist_cliente_layout.addLayout(btn_excluir_hist_layout)
         left_container.addWidget(self.group_historico_cliente)
 
-        content_layout.addLayout(left_container)
+        content_layout.addLayout(left_container, stretch=3)
 
-        # --- COLUNA DIREITA: Lista de Pets + Ficha do Pet ---
+        # --- COLUNA DO MEIO: Resumo + Exames + Vacinas ---
+        self.middle_widget = QWidget()
+        middle_layout = QVBoxLayout(self.middle_widget)
+        middle_layout.setContentsMargins(4, 0, 4, 0)
+
+        # 1. Bloco de Resumo / Pendências
+        self.middle_group = QGroupBox("Resumo / Pendências")
+        self.middle_group.setStyleSheet("QGroupBox { font-weight: bold; font-size: 13px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px; padding-top: 8px; }")
+        self.middle_group.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        
+        middle_group_layout = QVBoxLayout(self.middle_group)
+        self.txt_middle_info = QTextBrowser()
+        self.txt_middle_info.setPlaceholderText("Informações centrais...")
+        middle_group_layout.addWidget(self.txt_middle_info)
+        middle_layout.addWidget(self.middle_group, stretch=35)
+
+        # 2. Bloco de Resultados de Exames
+        self.group_exames = QGroupBox("Resultados de Exames")
+        self.group_exames.setStyleSheet("QGroupBox { font-weight: bold; font-size: 13px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px; padding-top: 8px; }")
+        self.group_exames.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        
+        exames_layout = QVBoxLayout(self.group_exames)
+        self.exames_list_widget = QListWidget()
+        self.exames_list_widget.itemDoubleClicked.connect(self.abrir_exame_selecionado)
+        exames_layout.addWidget(self.exames_list_widget)
+
+        exames_btn_layout = QHBoxLayout()
+        self.btn_anexar_exame = QPushButton("Anexar")
+        self.btn_anexar_exame.setStyleSheet("font-size: 11px; padding: 4px;")
+        self.btn_anexar_exame.clicked.connect(self.anexar_exame_pet)
+
+        self.btn_remover_exame = QPushButton("Remover")
+        self.btn_remover_exame.setStyleSheet("font-size: 11px; padding: 4px; color: #c53030;")
+        self.btn_remover_exame.clicked.connect(self.remover_exame_pet)
+
+        exames_btn_layout.addWidget(self.btn_anexar_exame)
+        exames_btn_layout.addWidget(self.btn_remover_exame)
+        exames_layout.addLayout(exames_btn_layout)
+        
+        middle_layout.addWidget(self.group_exames, stretch=35)
+
+        # 3. Bloco de Controle e Histórico de Vacinas (Movido para cá!)
+        self.group_vacinas_cliente = QGroupBox("Controle e Histórico de Vacinas")
+        self.group_vacinas_cliente.setStyleSheet("QGroupBox { font-weight: bold; font-size: 13px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px; padding-top: 8px; }")
+        self.group_vacinas_cliente.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        
+        vacinas_cliente_layout = QVBoxLayout(self.group_vacinas_cliente)
+        self.txt_vacinas_cliente = QTextBrowser()
+        self.txt_vacinas_cliente.setPlaceholderText("Nenhum registro de vacina encontrado.")
+        vacinas_cliente_layout.addWidget(self.txt_vacinas_cliente)
+
+        middle_layout.addWidget(self.group_vacinas_cliente, stretch=30)
+
+        content_layout.addWidget(self.middle_widget, stretch=3)
+
+        # --- COLUNA DIREITA: Lista de Pets + Ficha do Pet (Com a Foto no Topo) ---
         right_container = QVBoxLayout()
 
         pets_group = QGroupBox("Pets Vinculados")
@@ -132,7 +193,6 @@ class ClientDetailTab(QWidget):
         self.add_pet_button.clicked.connect(self.prepare_new_pet_form)
         
         self.remove_pet_button = QPushButton("Remover Pet Selecionado")
-    #self.remove_pet_button.setStyleSheet(" color: #d9534f")
         self.remove_pet_button.clicked.connect(self.confirm_delete_pet)
 
         pets_btn_layout.addWidget(self.add_pet_button)
@@ -140,9 +200,35 @@ class ClientDetailTab(QWidget):
         pets_layout.addLayout(pets_btn_layout)
         right_container.addWidget(pets_group)
 
-        # Ficha do Pet (inicialmente oculta)
+        # Ficha do Pet (inicialmente oculta) - Contém a Foto no topo + formulário
         self.patient_group = QGroupBox("Ficha do Paciente (Pet)")
-        patient_layout = QFormLayout(self.patient_group)
+        patient_main_layout = QVBoxLayout(self.patient_group)
+
+        # Layout da Foto dentro da Ficha
+        foto_layout = QVBoxLayout()
+        self.lbl_foto_pet = QLabel("Sem foto")
+        self.lbl_foto_pet.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_foto_pet.setFixedSize(120, 120)
+        self.lbl_foto_pet.setStyleSheet("border: 1px dashed #aaa; background-color: #f9f9f9; color: #666; border-radius: 4px;")
+        
+        botoes_foto_layout = QHBoxLayout()
+        self.btn_carregar_foto = QPushButton("Carregar")
+        self.btn_carregar_foto.setStyleSheet("font-size: 11px; padding: 4px;")
+        self.btn_carregar_foto.clicked.connect(self.upload_pet_photo)
+
+        self.btn_remover_foto = QPushButton("Remover")
+        self.btn_remover_foto.setStyleSheet("font-size: 11px; padding: 4px; color: #c53030;")
+        self.btn_remover_foto.clicked.connect(self.remove_pet_photo)
+
+        botoes_foto_layout.addWidget(self.btn_carregar_foto)
+        botoes_foto_layout.addWidget(self.btn_remover_foto)
+        
+        foto_layout.addWidget(self.lbl_foto_pet, alignment=Qt.AlignmentFlag.AlignCenter)
+        foto_layout.addLayout(botoes_foto_layout)
+        patient_main_layout.addLayout(foto_layout)
+
+        # Campos do Formulário do Pet
+        patient_form_layout = QFormLayout()
 
         self.pet_name_input = QLineEdit()
         self.pet_name_input.editingFinished.connect(self.format_pet_name)
@@ -172,15 +258,17 @@ class ClientDetailTab(QWidget):
         self.weight_input = QLineEdit()
         self.microchip_input = QLineEdit()
 
-        patient_layout.addRow("Nome do Pet:", self.pet_name_input)
-        patient_layout.addRow("Espécie:", self.species_input)
-        patient_layout.addRow("Raça:", self.breed_input)
-        patient_layout.addRow("Sexo:", self.gender_input)
-        patient_layout.addRow("Castrado:", self.neutered_input)
-        patient_layout.addRow("Nascimento:", self.birth_date_input)
-        patient_layout.addRow("Idade:", self.age_input)
-        patient_layout.addRow("Peso (kg):", self.weight_input)
-        patient_layout.addRow("Microchip:", self.microchip_input)
+        patient_form_layout.addRow("Nome do Pet:", self.pet_name_input)
+        patient_form_layout.addRow("Espécie:", self.species_input)
+        patient_form_layout.addRow("Raça:", self.breed_input)
+        patient_form_layout.addRow("Sexo:", self.gender_input)
+        patient_form_layout.addRow("Castrado:", self.neutered_input)
+        patient_form_layout.addRow("Nascimento:", self.birth_date_input)
+        patient_form_layout.addRow("Idade:", self.age_input)
+        patient_form_layout.addRow("Peso (kg):", self.weight_input)
+        patient_form_layout.addRow("Microchip:", self.microchip_input)
+
+        patient_main_layout.addLayout(patient_form_layout)
 
         self.save_pet_button = QPushButton("Salvar Alterações / Cadastrar Pet")
         self.save_pet_button.setStyleSheet("font-weight: bold; padding: 6px;")
@@ -191,13 +279,166 @@ class ClientDetailTab(QWidget):
             pass
             
         self.save_pet_button.clicked.connect(self.save_pet_data)
-        patient_layout.addRow(self.save_pet_button)
+        patient_main_layout.addWidget(self.save_pet_button)
         
         right_container.addWidget(self.patient_group)
         self.patient_group.hide()
 
-        content_layout.addLayout(right_container)
+        content_layout.addLayout(right_container, stretch=3)
         main_layout.addLayout(content_layout)
+
+    # --- FUNÇÕES DE EXAMES ---
+    def anexar_exame_pet(self):
+        if not self.current_selected_pet_id:
+            QMessageBox.warning(self, "Aviso", "Selecione ou clique em um pet na lista primeiro para anexar exames.")
+            return
+
+        file_name, _ = QFileDialog.getOpenFileName(
+            self, "Selecionar Resultado de Exame", "", 
+            "Documentos e Imagens (*.pdf *.png *.jpg *.jpeg)"
+        )
+        if file_name:
+            try:
+                os.makedirs("pet_exams", exist_ok=True)
+                base_name = os.path.basename(file_name)
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                nome_unico = f"pet_{self.current_selected_pet_id}_{timestamp}_{base_name}"
+                dest_path = os.path.join("pet_exams", nome_unico)
+                
+                shutil.copy(file_name, dest_path)
+
+                self.db.cursor.execute(
+                    "INSERT INTO pet_exams (pet_id, file_name, file_path) VALUES (?, ?, ?)", 
+                    (self.current_selected_pet_id, base_name, dest_path)
+                )
+                self.db.conn.commit()
+
+                self.load_exames_pet(self.current_selected_pet_id)
+                QMessageBox.information(self, "Sucesso", "Exame anexado com sucesso!")
+            except Exception as e:
+                QMessageBox.critical(self, "Erro", f"Não foi possível salvar o exame: {e}")
+
+    def load_exames_pet(self, pet_id):
+        self.exames_list_widget.clear()
+        if not self.db or not pet_id:
+            return
+
+        try:
+            self.db.cursor.execute("""
+                CREATE TABLE IF NOT EXISTS pet_exams (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    pet_id INTEGER,
+                    file_name TEXT,
+                    file_path TEXT,
+                    FOREIGN KEY(pet_id) REFERENCES patients(id) ON DELETE CASCADE
+                )
+            """)
+            self.db.conn.commit()
+
+            self.db.cursor.execute("SELECT id, file_name, file_path FROM pet_exams WHERE pet_id = ?", (pet_id,))
+            registros = self.db.cursor.fetchall()
+
+            for exam_id, file_name, file_path in registros:
+                item = QListWidgetItem(f"📄 {file_name}")
+                item.setData(Qt.ItemDataRole.UserRole, file_path)
+                self.exames_list_widget.addItem(item)
+        except Exception as e:
+            print(f"Erro ao carregar exames: {e}")
+
+    def abrir_exame_selecionado(self, item):
+        file_path = item.data(Qt.ItemDataRole.UserRole)
+        if file_path and os.path.exists(file_path):
+            try:
+                if sys.platform == "win32":
+                    os.startfile(file_path)
+                elif sys.platform == "darwin":
+                    subprocess.run(["open", file_path])
+                else:
+                    subprocess.run(["xdg-open", file_path])
+            except Exception as e:
+                QMessageBox.critical(self, "Erro", f"Não foi possível abrir o arquivo: {e}")
+        else:
+            QMessageBox.warning(self, "Aviso", "O arquivo físico não foi encontrado na pasta.")
+
+    def remover_exame_pet(self):
+        selected_item = self.exames_list_widget.currentItem()
+        if not selected_item:
+            QMessageBox.warning(self, "Aviso", "Selecione um exame na lista para remover.")
+            return
+
+        file_path = selected_item.data(Qt.ItemDataRole.UserRole)
+
+        resposta = QMessageBox.question(
+            self, "Remover Exame", "Deseja realmente remover este exame do prontuário?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+
+        if resposta == QMessageBox.StandardButton.Yes:
+            try:
+                self.db.cursor.execute("DELETE FROM pet_exams WHERE file_path = ?", (file_path,))
+                self.db.conn.commit()
+
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+
+                self.load_exames_pet(self.current_selected_pet_id)
+                QMessageBox.information(self, "Sucesso", "Exame removido com sucesso!")
+            except Exception as e:
+                QMessageBox.critical(self, "Erro", f"Não foi possível remover o exame: {e}")
+
+    # --- FUNÇÕES DE FOTO DO PET ---
+    def upload_pet_photo(self):
+        if not self.current_selected_pet_id:
+            QMessageBox.warning(self, "Aviso", "Selecione ou clique em um pet na lista primeiro para adicionar a foto.")
+            return
+
+        file_name, _ = QFileDialog.getOpenFileName(self, "Selecionar Foto do Pet", "", "Imagens (*.png *.jpg *.jpeg)")
+        if file_name:
+            try:
+                os.makedirs("pet_photos", exist_ok=True)
+                ext = os.path.splitext(file_name)[1]
+                dest_path = f"pet_photos/pet_{self.current_selected_pet_id}{ext}"
+                
+                shutil.copy(file_name, dest_path)
+
+                self.db.cursor.execute("UPDATE patients SET photo_path = ? WHERE id = ?", (dest_path, self.current_selected_pet_id))
+                self.db.conn.commit()
+
+                self.display_pet_photo(dest_path)
+                QMessageBox.information(self, "Sucesso", "Foto do pet atualizada com sucesso!")
+            except Exception as e:
+                QMessageBox.critical(self, "Erro", f"Não foi possível salvar a foto: {e}")
+
+    def remove_pet_photo(self):
+        if not self.current_selected_pet_id:
+            QMessageBox.warning(self, "Aviso", "Nenhum pet selecionado.")
+            return
+
+        resposta = QMessageBox.question(
+            self, "Remover Foto", "Deseja realmente remover a foto deste paciente?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+
+        if resposta == QMessageBox.StandardButton.Yes:
+            try:
+                self.db.cursor.execute("UPDATE patients SET photo_path = NULL WHERE id = ?", (self.current_selected_pet_id,))
+                self.db.conn.commit()
+
+                self.display_pet_photo(None)
+                QMessageBox.information(self, "Sucesso", "Foto removida com sucesso!")
+            except Exception as e:
+                QMessageBox.critical(self, "Erro", f"Não foi possível remover a foto: {e}")
+
+    def display_pet_photo(self, path_or_none):
+        if path_or_none and os.path.exists(path_or_none):
+            pixmap = QPixmap(path_or_none)
+            scaled_pixmap = pixmap.scaled(self.lbl_foto_pet.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            self.lbl_foto_pet.setPixmap(scaled_pixmap)
+        else:
+            self.lbl_foto_pet.clear()
+            self.lbl_foto_pet.setText("Sem foto")
 
     def load_client_data(self):
         if not self.db or not self.client_id:
@@ -232,28 +473,30 @@ class ClientDetailTab(QWidget):
             item.setData(Qt.ItemDataRole.UserRole, pet)
             self.pets_list_widget.addItem(item)
 
-    def load_historico_cliente(self):
-        """Carrega o histórico completo de todos os atendimentos dos pets deste cliente."""
+    def load_historico_cliente(self, pet_id=None):
         if not self.db or not self.client_id:
             return
 
         try:
-            # Puxa todos os históricos vinculados aos pets pertencentes a este client_id
-            query = """
-                CH.id, CH.date, CH.notes, P.pet_name 
-                FROM consultation_history CH
-                JOIN patients P ON CH.pet_id = P.id
-                WHERE CH.client_id = ?
-                ORDER BY CH.date DESC, CH.id DESC
-            """
-            # Usando o cursor direto para garantir flexibilidade caso a estrutura varie levemente
-            self.db.cursor.execute("""
-                SELECT ch.id, ch.date, ch.notes, p.pet_name 
-                FROM consultation_history ch
-                JOIN patients p ON ch.pet_id = p.id
-                WHERE ch.client_id = ?
-                ORDER BY ch.date DESC, ch.id DESC
-            """, (self.client_id,))
+            if pet_id:
+                query = """
+                    SELECT ch.id, ch.date, ch.notes, p.pet_name 
+                    FROM consultation_history ch
+                    JOIN patients p ON ch.pet_id = p.id
+                    WHERE ch.client_id = ? AND ch.pet_id = ?
+                    ORDER BY ch.date DESC, ch.id DESC
+                """
+                self.db.cursor.execute(query, (self.client_id, pet_id))
+            else:
+                query = """
+                    SELECT ch.id, ch.date, ch.notes, p.pet_name 
+                    FROM consultation_history ch
+                    JOIN patients p ON ch.pet_id = p.id
+                    WHERE ch.client_id = ?
+                    ORDER BY ch.date DESC, ch.id DESC
+                """
+                self.db.cursor.execute(query, (self.client_id,))
+                
             registros = self.db.cursor.fetchall()
 
             if registros:
@@ -269,13 +512,135 @@ class ClientDetailTab(QWidget):
                 
                 self.txt_historico_cliente.setHtml(html_content.strip())
             else:
-                self.txt_historico_cliente.setHtml("<i>Nenhum atendimento registrado para os pets deste cliente.</i>")
+                self.txt_historico_cliente.setHtml("<i>Nenhum atendimento registrado para este filtro.</i>")
         except Exception as e:
-            print(f"Erro ao carregar histórico do cliente: {e}")
+            print(f"Erro ao carregar histórico: {e}")
             self.txt_historico_cliente.setHtml("<i>Erro ao carregar histórico.</i>")
 
+    def load_vacinas_cliente(self, pet_id=None):
+        if not self.db or not self.client_id:
+            return
+
+        try:
+            vacinas_caninas = [
+                "V8 (Múltipla)", "V10 (Múltipla)", "Antirrábica", 
+                "Giárdia", "Gripe Canina (Traqueobronquite)", "Leishmaniose"
+            ]
+            
+            vacinas_felinas = [
+                "V3 (Tríplice Felina)", "V4 (Quádrupla Felina)", "V5 (Quíntupla Felina)", 
+                "Antirrábica", "FeLV (Leucemia Felina)"
+            ]
+
+            if pet_id:
+                self.db.cursor.execute("SELECT pet_name, species FROM patients WHERE id = ?", (pet_id,))
+                res_pet = self.db.cursor.fetchone()
+                
+                if not res_pet:
+                    self.txt_vacinas_cliente.setHtml("<i>Pet não encontrado.</i>")
+                    return
+
+                nome_pet, especie_pet = res_pet
+                
+                if especie_pet and especie_pet.lower() in ["felino", "gato"]:
+                    vacinas_padrao = vacinas_felinas
+                    tipo_esp = "Felino"
+                else:
+                    vacinas_padrao = vacinas_caninas
+                    tipo_esp = "Canino"
+
+                query = """
+                    SELECT vaccine_name, application_date, next_due_date 
+                    FROM pet_vaccines 
+                    WHERE pet_id = ?
+                """
+                self.db.cursor.execute(query, (pet_id,))
+                registros_aplicados = {row[0]: (row[1], row[2]) for row in self.db.cursor.fetchall()}
+
+                html_content = f"""
+                    <b style="font-size: 12px; color: #333;">Paciente: {nome_pet} ({tipo_esp})</b>
+                    <table width="100%" cellspacing="0" cellpadding="4" style="font-size: 11px; margin-top: 5px;">
+                        <tr style="font-weight: bold;">
+                            <td>Vacina</td>
+                            <td>Última Aplicação</td>
+                            <td>Próxima Dose (Reforço)</td>
+                        </tr>
+                """
+
+                for vac in vacinas_padrao:
+                    vac_encontrada = None
+                    for v_cad in registros_aplicados:
+                        if vac.lower() in v_cad.lower() or v_cad.lower() in vac.lower():
+                            vac_encontrada = v_cad
+                            break
+
+                    if vac_encontrada:
+                        app_date, due_date = registros_aplicados[vac_encontrada]
+                        app_fmt = f"{app_date.split('-')[2]}/{app_date.split('-')[1]}/{app_date.split('-')[0]}" if len(str(app_date)) == 10 and '-' in app_date else app_date
+                        due_fmt = f"{due_date.split('-')[2]}/{due_date.split('-')[1]}/{due_date.split('-')[0]}" if len(str(due_date)) == 10 and '-' in due_date else due_date
+                        
+                        html_content += f"""
+                            <tr>
+                                <td><b>{vac}</b></td>
+                                <td>{app_fmt}</td>
+                                <td><span style="color: #ffbf00; font-weight: bold;">{due_fmt}</span></td>
+                            </tr>
+                        """
+                    else:
+                        html_content += f"""
+                            <tr>
+                                <td><b>{vac}</b></td>
+                                <td colspan="2" style="color: #888; font-style: italic;">Não aplicada / Sem registro</td>
+                            </tr>
+                        """
+                html_content += "</table>"
+                self.txt_vacinas_cliente.setHtml(html_content)
+
+            else:
+                query = """
+                    p.pet_name, p.species, v.vaccine_name, v.application_date, v.next_due_date 
+                    FROM patients p
+                    LEFT JOIN pet_vaccines v ON p.id = v.pet_id
+                    WHERE p.client_id = ?
+                    ORDER BY p.pet_name ASC
+                """
+                self.db.cursor.execute(f"SELECT {query}", (self.client_id,))
+                registros = self.db.cursor.fetchall()
+
+                if registros and any(r[2] is not None for r in registros):
+                    html_content = """
+                        <table width="100%" cellspacing="0" cellpadding="4" style="font-size: 11px;">
+                            <tr style="background-color: #f2f2f2; font-weight: bold;">
+                                <td>Pet (Espécie)</td>
+                                <td>Vacina</td>
+                                <td>Aplicada em</td>
+                                <td>Próxima Dose</td>
+                            </tr>
+                    """
+                    for pet_name, especie, vac_name, app_date, due_date in registros:
+                        if not vac_name:
+                            continue
+                        app_fmt = f"{app_date.split('-')[2]}/{app_date.split('-')[1]}/{app_date.split('-')[0]}" if len(str(app_date)) == 10 and '-' in app_date else app_date
+                        due_fmt = f"{due_date.split('-')[2]}/{due_date.split('-')[1]}/{due_date.split('-')[0]}" if len(str(due_date)) == 10 and '-' in due_date else due_date
+
+                        html_content += f"""
+                            <tr>
+                                <td><b>{pet_name}</b> ({especie})</td>
+                                <td>{vac_name}</td>
+                                <td>{app_fmt}</td>
+                                <td><span style="color: #d97706; font-weight: bold;">{due_fmt}</span></td>
+                            </tr>
+                        """
+                    html_content += "</table>"
+                    self.txt_vacinas_cliente.setHtml(html_content)
+                else:
+                    self.txt_vacinas_cliente.setHtml("<i>Nenhum registro de vacina encontrado para os pets deste cliente.</i>")
+
+        except Exception as e:
+            print(f"Erro ao carregar vacinas do cliente: {e}")
+            self.txt_vacinas_cliente.setHtml("<i>Erro ao carregar histórico de vacinas.</i>")
+
     def solicitar_exclusao_historico_por_id(self):
-        """Permite apagar um atendimento direto da aba do cliente informando o ID."""
         from PyQt6.QtWidgets import QInputDialog
         id_str, ok = QInputDialog.getText(self, "Excluir Atendimento", "Digite o número do ID do atendimento que deseja apagar (ex: 12):")
         
@@ -292,7 +657,7 @@ class ClientDetailTab(QWidget):
                 if resposta == QMessageBox.StandardButton.Yes:
                     self.db.deletar_historico_por_id(hist_id)
                     QMessageBox.information(self, "Sucesso", f"Atendimento ID #{hist_id} removido com sucesso!")
-                    self.load_historico_cliente()
+                    self.load_historico_cliente(self.current_selected_pet_id)
             except ValueError:
                 QMessageBox.warning(self, "Erro", "Por favor, digite apenas números válidos para o ID.")
             except Exception as e:
@@ -352,7 +717,8 @@ class ClientDetailTab(QWidget):
 
             self._is_modified_flag = False
             self.load_pets_list()
-            self.load_historico_cliente()
+            self.load_historico_cliente(self.current_selected_pet_id)
+            self.load_vacinas_cliente(self.current_selected_pet_id)
             
             if hasattr(self.main_window, "client_list_ui"):
                 self.main_window.client_list_ui.load_data()
@@ -445,9 +811,20 @@ class ClientDetailTab(QWidget):
             
         self.microchip_input.setText(str(pet[10] or ""))
         
+        # --- CARREGA A FOTO E OS EXAMES DO PET DO BANCO ---
+        self.db.cursor.execute("SELECT photo_path FROM patients WHERE id = ?", (pet[0],))
+        res_foto = self.db.cursor.fetchone()
+        caminho_foto = res_foto[0] if res_foto else None
+        self.display_pet_photo(caminho_foto)
+
+        self.load_exames_pet(pet[0])
+
         self._is_modified_flag = False
         self._is_loading = False
         self.patient_group.show()
+
+        self.load_historico_cliente(pet[0])
+        self.load_vacinas_cliente(pet[0])
 
     def prepare_new_pet_form(self):
         if not self.check_unsaved_changes():
@@ -467,9 +844,15 @@ class ClientDetailTab(QWidget):
         self.weight_input.clear()
         self.microchip_input.clear()
         
+        self.display_pet_photo(None) # Limpa a foto
+        self.exames_list_widget.clear() # Limpa a lista de exames
+
         self._is_modified_flag = False
         self._is_loading = False
         self.patient_group.show()
+
+        self.load_historico_cliente(None)
+        self.load_vacinas_cliente(None)
 
     def update_breeds(self, species):
         self.breed_input.clear()
@@ -662,7 +1045,10 @@ class ClientDetailTab(QWidget):
                 self.db.conn.commit()
                 QMessageBox.information(self, "Sucesso", "Pet removido com sucesso!")
                 self.load_pets_list()
-                self.load_historico_cliente()
+                self.load_historico_cliente(None)
+                self.load_vacinas_cliente(None)
+                self.display_pet_photo(None)
+                self.exames_list_widget.clear()
                 if hasattr(self.main_window, "client_list_ui"):
                     self.main_window.client_list_ui.load_data()
             except Exception as e:
