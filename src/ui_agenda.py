@@ -186,6 +186,10 @@ class AgendaTab(QWidget):
         # Carrega os dados iniciais e atualiza as listagens/calendário
         self.carregar_dados_clientes()
         self.carregar_horarios_do_dia(self.calendar.selectedDate())
+        
+        # CHAMA A FUNÇÃO PARA PINTAR LOGO AO ABRIR O SISTEMA:
+        self.pintar_dias_com_eventos(self.calendar.yearShown(), self.calendar.monthShown())
+        
         self.atualizar_resumo_mes(self.calendar.yearShown(), self.calendar.monthShown())
 
     def on_current_page_changed(self, year, month):
@@ -199,7 +203,8 @@ class AgendaTab(QWidget):
             return
         try:
             formato_amarelo = QTextCharFormat()
-            formato_amarelo.setForeground(QColor("#ffbf00"))
+            formato_amarelo.setForeground(QColor("#ffbf00"))   # Garante que o texto fica preto
+            formato_amarelo.setFontWeight(QFont.Weight.Bold) # Coloca o número a negrito
 
             primeiro_dia = QDate(year, month, 1)
             ultimo_dia = QDate(year, month, primeiro_dia.daysInMonth())

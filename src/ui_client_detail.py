@@ -6,10 +6,11 @@ import sys
 from PyQt6.QtWidgets import (
     QWidget, QLineEdit, QFormLayout, QVBoxLayout, 
     QPushButton, QHBoxLayout, QGroupBox, QLabel, 
-    QListWidget, QMessageBox, QComboBox, QDialog, QDialogButtonBox, QListWidgetItem, QTextBrowser, QFileDialog, QSizePolicy
+    QListWidget, QMessageBox, QComboBox, QDialog, QDialogButtonBox, QListWidgetItem, QTextBrowser, QFileDialog, QSizePolicy,
+    QTableWidget, QTableWidgetItem, QAbstractItemView, QHeaderView
 )
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QPixmap
+from PyQt6.QtGui import QPixmap, QBrush, QColor
 
 
 class ClientDetailTab(QWidget):
@@ -143,9 +144,20 @@ class ClientDetailTab(QWidget):
         filtro_pag_layout.addWidget(self.combo_filtro_pag)
         pag_cliente_layout.addLayout(filtro_pag_layout)
 
-        self.txt_pagamentos_cliente = QTextBrowser()
-        self.txt_pagamentos_cliente.setPlaceholderText("Nenhum pagamento registrado.")
-        pag_cliente_layout.addWidget(self.txt_pagamentos_cliente)
+        # Rótulo para exibir o total em pendências
+        self.lbl_total_pendente = QLabel("Total em Pendências: R$ 0,00")
+        self.lbl_total_pendente.setStyleSheet("color: #ffbf00; font-weight: bold; font-size: 13px;")
+        pag_cliente_layout.addWidget(self.lbl_total_pendente)
+
+        # Tabela interativa de pagamentos
+        self.table_pagamentos = QTableWidget()
+        self.table_pagamentos.setColumnCount(6)
+        self.table_pagamentos.setHorizontalHeaderLabels(["ID", "Data", "Pet", "Método", "Valor", "Status"])
+        self.table_pagamentos.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows) # Seleciona a linha inteira
+        self.table_pagamentos.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers) # Impede edição direta na célula
+        self.table_pagamentos.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch) # Ajusta colunas à tela
+        self.table_pagamentos.itemDoubleClicked.connect(self.on_pagamento_double_clicked)
+        pag_cliente_layout.addWidget(self.table_pagamentos)
 
         # Botão para excluir pagamento por ID (caso ocorra algum erro)
         btn_excluir_pag_layout = QHBoxLayout()
@@ -353,6 +365,7 @@ class ClientDetailTab(QWidget):
             if filtro_atual == "Apenas Pendências":
                 registros = [r for r in registros if r[6] and r[6].lower() == "pendente"]
 
+            # Calcula o Total Pendente
             total_pendente = 0.0
             if pet_id:
                 self.db.cursor.execute("""
@@ -371,54 +384,75 @@ class ClientDetailTab(QWidget):
                 total_pendente = res_soma[0]
 
             soma_str = f"R$ {total_pendente:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            self.lbl_total_pendente.setText(f"Total em Pendências: {soma_str}")
 
-            # Cor amarela unificada (#ffbf00) para o total de pendências
-            html_content = f"""
-                <div style="margin-bottom: 8px; font-size: 12px;">
-                    <b>Total em Pendências:</b> <span style="color: #ffbf00; font-weight: bold; font-size: 13px;">{soma_str}</span>
-                </div>
-            """
+            # Limpa a tabela antes de preencher
+            self.table_pagamentos.setRowCount(0)
 
             if registros:
-                html_content += """
-                    <table width="100%" cellspacing="0" cellpadding="4" style="font-size: 11px;">
-                        <tr style="font-weight: bold;">
-                            <td>ID</td>
-                            <td>Data</td>
-                            <td>Pet</td>
-                            <td>Método</td>
-                            <td>Valor</td>
-                            <td>Status</td>
-                        </tr>
-                """
-                for pay_id, data_atend, pet_name, metodo, valor, parcelas, status in registros:
+                self.table_pagamentos.setRowCount(len(registros))
+                for row_idx, (pay_id, data_atend, pet_name, metodo, valor, parcelas, status) in enumerate(registros):
+                    
+                    # Formatações
                     partes_data = data_atend.split("-")
                     data_fmt = f"{partes_data[2]}/{partes_data[1]}/{partes_data[0]}" if len(partes_data) == 3 else data_atend
                     val_str = f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-                    
-                    status_cor = "color: #c53030; font-weight: bold;" if status and status.lower() == "pendente" else "color: #2f855a; font-weight: bold;"
-                    
                     parcelas_str = f" ({parcelas}x)" if parcelas and parcelas > 1 else ""
+                    metodo_fmt = f"{metodo}{parcelas_str}"
 
-                    html_content += f"""
-                        <tr>
-                            <td><b>#{pay_id}</b></td>
-                            <td>{data_fmt}</td>
-                            <td>{pet_name}</td>
-                            <td>{metodo}{parcelas_str}</td>
-                            <td>{val_str}</td>
-                            <td><span style="{status_cor}">{status}</span></td>
-                        </tr>
-                    """
-                html_content += "</table>"
-            else:
-                html_content += "<i>Nenhum registro de pagamento encontrado.</i>"
+                    # Cria as células
+                    id_item = QTableWidgetItem(f"#{pay_id}")
+                    id_item.setData(Qt.ItemDataRole.UserRole, pay_id) # Guarda o ID de forma invisível
+                    
+                    data_item = QTableWidgetItem(data_fmt)
+                    pet_item = QTableWidgetItem(pet_name)
+                    metodo_item = QTableWidgetItem(metodo_fmt)
+                    valor_item = QTableWidgetItem(val_str)
+                    
+                    status_item = QTableWidgetItem(status)
+                    font = status_item.font()
+                    font.setBold(True)
+                    status_item.setFont(font)
 
-            self.txt_pagamentos_cliente.setHtml(html_content)
+                    # Colore o status 
+                    if status and status.lower() == "pendente":
+                        status_item.setForeground(QBrush(QColor("#c53030"))) # Vermelho
+                    else:
+                        status_item.setForeground(QBrush(QColor("#2f855a"))) # Verde
+
+                    # Adiciona as células na linha atual
+                    self.table_pagamentos.setItem(row_idx, 0, id_item)
+                    self.table_pagamentos.setItem(row_idx, 1, data_item)
+                    self.table_pagamentos.setItem(row_idx, 2, pet_item)
+                    self.table_pagamentos.setItem(row_idx, 3, metodo_item)
+                    self.table_pagamentos.setItem(row_idx, 4, valor_item)
+                    self.table_pagamentos.setItem(row_idx, 5, status_item)
 
         except Exception as e:
             print(f"Erro ao carregar histórico de pagamentos: {e}")
-            self.txt_pagamentos_cliente.setHtml("<i>Erro ao carregar histórico de pagamentos.</i>")
+
+    def on_pagamento_double_clicked(self, item):
+        row = item.row()
+        # Pegamos a coluna 0, onde escondemos o ID original do banco de dados 
+        id_item = self.table_pagamentos.item(row, 0)
+        
+        if not id_item:
+            return
+            
+        pay_id = id_item.data(Qt.ItemDataRole.UserRole)
+
+        # 1. Troca a aba do sistema principal para a página inicial (índice 0)
+        if hasattr(self.main_window, "tabs"):
+            self.main_window.tabs.setCurrentIndex(0)
+            
+        # 2. Chama a função no seu ui_main.py responsável por carregar o pagamento para edição
+        if hasattr(self.main_window, "carregar_pagamento_para_edicao"):
+            self.main_window.carregar_pagamento_para_edicao(pay_id)
+        else:
+            QMessageBox.warning(self, "Aviso", 
+                "A mudança de tela funcionou, mas você precisa criar a função "
+                "'carregar_pagamento_para_edicao(pay_id)' no seu ui_main.py "
+                "para carregar os dados no formulário inicial!")
 
     def solicitar_exclusao_pagamento_por_id(self):
         from PyQt6.QtWidgets import QInputDialog
@@ -1017,17 +1051,37 @@ class ClientDetailTab(QWidget):
         self.breed_input.clear()
         if species == "Canino":
             breeds = [
-                "SRD (Vira-lata)", "Shih Tzu", "Poodle", "Yorkshire Terrier", 
-                "Golden Retriever", "Labrador Retriever", "Bulldog Francês", 
-                "Pitbull", "Pastor Alemão", "Lhasa Apso", "Beagle", "Pug", 
-                "Spitz Alemão", "Border Collie", "Dachshund", "Outro..."
-            ]
+                    "Beagle", 
+                    "Border Collie", 
+                    "Bulldog Francês", 
+                    "Dachshund", 
+                    "Golden Retriever", 
+                    "Labrador Retriever", 
+                    "Lhasa Apso", 
+                    "Outro...", 
+                    "Pastor Alemão", 
+                    "Pitbull", 
+                    "Poodle", 
+                    "Pug", 
+                    "Shih Tzu", 
+                    "Spitz Alemão", 
+                    "SRD", 
+                    "Yorkshire Terrier"
+                ]
         elif species == "Felino":
             breeds = [
-                "SRD (Gato de Rua)", "Persa", "Siamês", "Maine Coon", 
-                "Angorá", "British Shorthair", "Ragdoll", "Sphynx", 
-                "Azul Russo", "Scottish Fold", "Outro..."
-            ]
+                    "Angorá", 
+                    "Azul Russo", 
+                    "British Shorthair", 
+                    "Maine Coon", 
+                    "Outro...", 
+                    "Persa", 
+                    "Ragdoll", 
+                    "Scottish Fold", 
+                    "Siamês", 
+                    "Sphynx", 
+                    "SRD"
+                ]
         else:
             breeds = ["Outro..."]
         self.breed_input.addItems(breeds)

@@ -13,11 +13,13 @@ class Database:
         self.create_tables()
 
     def connect(self):
-        """Connect to the SQLite database."""
+        """Connect to the SQLite database and enable foreign keys."""
         try:
             self.conn = sqlite3.connect(self.db_path)
+            # 🔴 ATIVA O SUPORTE A CHAVES ESTRANGEIRAS AQUI
+            self.conn.execute("PRAGMA foreign_keys = ON;")
             self.cursor = self.conn.cursor()
-            print(f"Connected to database at {self.db_path}")
+            print(f"Connected to database at {self.db_path} (Foreign Keys ON)")
         except sqlite3.Error as e:
             print(f"Error connecting to database: {e}")
 
@@ -43,7 +45,7 @@ class Database:
                 )
             """)
 
-            # Patients (Pets) table with flexible age/birthdate support
+            # Patients (Pets) table with ON DELETE CASCADE added
             self.cursor.execute("""
                 CREATE TABLE IF NOT EXISTS patients (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -58,7 +60,7 @@ class Database:
                     weight REAL,
                     microchip TEXT,
                     photo_path TEXT,
-                    FOREIGN KEY (client_id) REFERENCES clients (id)
+                    FOREIGN KEY (client_id) REFERENCES clients (id) ON DELETE CASCADE
                 )
             """)
 
@@ -81,8 +83,8 @@ class Database:
                     date TEXT NOT NULL,
                     notes TEXT,
                     appointment_id INTEGER,
-                    FOREIGN KEY (pet_id) REFERENCES patients (id),
-                    FOREIGN KEY (client_id) REFERENCES clients (id)
+                    FOREIGN KEY (pet_id) REFERENCES patients (id) ON DELETE CASCADE,
+                    FOREIGN KEY (client_id) REFERENCES clients (id) ON DELETE CASCADE
                 )
             """)
 
@@ -143,10 +145,12 @@ class Database:
             return None
 
     def salvar_pagamentos(self, consultation_id, pagamentos):
-        """Salva a lista de pagamentos (ou divisão) de um atendimento."""
+        """Salva a lista de pagamentos (ou divisão) de um atendimento, limpando anteriores para evitar duplicidade."""
         try:
+            # Remove pagamentos anteriores da mesma consulta para evitar duplicidade ao atualizar
+            self.cursor.execute("DELETE FROM consultation_payments WHERE consultation_id = ?", (consultation_id,))
+            
             for pag in pagamentos:
-                # pag espera: (payment_method, amount, installments, status)
                 self.cursor.execute("""
                     INSERT INTO consultation_payments (consultation_id, payment_method, amount, installments, status)
                     VALUES (?, ?, ?, ?, ?)
@@ -359,12 +363,11 @@ class Database:
             return []
 
     def delete_client(self, client_id):
-        """Passa a remover o cliente e todos os seus pets do banco de dados."""
+        """Remove o cliente e deixa o SQLite apagar os pets e dados em cascata."""
         try:
-            self.cursor.execute("DELETE FROM patients WHERE client_id = ?", (client_id,))
             self.cursor.execute("DELETE FROM clients WHERE id = ?", (client_id,))
             self.conn.commit()
-            print("Cliente e pets removidos com sucesso!")
+            print("Cliente e dados vinculados removidos com sucesso!")
         except sqlite3.Error as e:
             print(f"Erro ao remover cliente: {e}")
             self.conn.rollback()

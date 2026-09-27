@@ -18,6 +18,12 @@ class CashFlowTab(QWidget):
         
         self.init_ui()
         self.carregar_dados_caixa()
+    
+    def load_data(self):
+        self.carregar_dados_caixa()
+
+    def carregar_dados(self):
+        self.carregar_dados_caixa()
 
     def init_ui(self):
         main_layout = QVBoxLayout(self)
@@ -36,32 +42,32 @@ class CashFlowTab(QWidget):
         
         main_layout.addLayout(top_layout)
 
-        # --- BLOCO SUPERIOR: Resumo / Indicadores (Fonte normal, sem negrito) ---
-        resumo_group = QGroupBox("Indicadores do Mês")
-        resumo_group.setStyleSheet("QGroupBox { font-weight: bold; font-size: 13px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px; padding-top: 8px; }")
-        resumo_layout = QHBoxLayout(resumo_group)
+        # --- BLOCO SUPERIOR: Resumo / Indicadores ---
+        self.resumo_group = QGroupBox("Indicadores do Período")
+        self.resumo_group.setStyleSheet("QGroupBox { font-weight: bold; font-size: 13px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px; padding-top: 8px; }")
+        resumo_layout = QHBoxLayout(self.resumo_group)
 
-        self.lbl_fat_mes = QLabel("Faturamento Mês: —")
+        self.lbl_fat_mes = QLabel("Faturamento: —")
         self.lbl_fat_mes.setStyleSheet("font-size: 13px; font-weight: normal;")
         
         self.lbl_total_recebido = QLabel("Total Recebido: —")
         self.lbl_total_recebido.setStyleSheet("font-size: 13px; font-weight: normal;")
         
         self.lbl_total_pendente = QLabel("Total Pendente: —")
-        self.lbl_total_pendente.setStyleSheet("font-size: 13px; font-weight: normal;")
+        self.lbl_total_pendente.setStyleSheet("font-size: 13px; font-weight: normal; color: #ffbf00;")
 
         resumo_layout.addWidget(self.lbl_fat_mes)
         resumo_layout.addWidget(self.lbl_total_recebido)
         resumo_layout.addWidget(self.lbl_total_pendente)
         
-        main_layout.addWidget(resumo_group)
+        main_layout.addWidget(self.resumo_group)
 
         # --- BLOCO PRINCIPAL: Extrato de Movimentações ---
         extrato_group = QGroupBox("Extrato e Movimentações")
         extrato_group.setStyleSheet("QGroupBox { font-weight: bold; font-size: 13px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px; padding-top: 8px; }")
         extrato_layout = QVBoxLayout(extrato_group)
 
-        # Filtros (Status, Mês e Ano dinâmico focado no ano atual)
+        # Filtros (Status, Mês, Ano e Botões de Atalho Rápido Mensal/Anual)
         filtro_layout = QHBoxLayout()
         
         filtro_layout.addWidget(QLabel("Status:"))
@@ -72,7 +78,7 @@ class CashFlowTab(QWidget):
 
         filtro_layout.addWidget(QLabel("Mês:"))
         self.combo_filtro_mes = QComboBox()
-        self.combo_filtro_mes.addItem("Todos the Meses" if False else "Todos os Meses")
+        self.combo_filtro_mes.addItem("Todos os Meses")
         meses_nomes = [
             "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", 
             "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
@@ -121,8 +127,30 @@ class CashFlowTab(QWidget):
         
         main_layout.addWidget(extrato_group)
 
+    def ativar_visao_mensal(self):
+        """Atalho para selecionar o mês atual e manter o ano atual."""
+        mes_atual_str = datetime.now().strftime("%m")
+        for i in range(self.combo_filtro_mes.count()):
+            if self.combo_filtro_mes.itemData(i) == mes_atual_str:
+                self.combo_filtro_mes.setCurrentIndex(i)
+                break
+        
+        ano_atual_str = str(datetime.now().year)
+        idx_ano = self.combo_filtro_ano.findText(ano_atual_str)
+        if idx_ano >= 0:
+            self.combo_filtro_ano.setCurrentIndex(idx_ano)
+
+    def ativar_visao_anual(self):
+        """Atalho para selecionar 'Todos os Meses' e focar no ano atual."""
+        self.combo_filtro_mes.setCurrentIndex(0)
+        
+        ano_atual_str = str(datetime.now().year)
+        idx_ano = self.combo_filtro_ano.findText(ano_atual_str)
+        if idx_ano >= 0:
+            self.combo_filtro_ano.setCurrentIndex(idx_ano)
+
     def carregar_dados_caixa(self):
-        """Puxa os dados agrupando pagamentos da mesma consulta em formato de lista detalhada."""
+        """Puxa os dados agrupando pagamentos. Mantém as pendências sempre visíveis para controle."""
         if not self.db:
             return
         
@@ -144,6 +172,7 @@ class CashFlowTab(QWidget):
             mes_idx = self.combo_filtro_mes.currentIndex()
             ano_filtro = self.combo_filtro_ano.currentText()
             
+            # 1. BUSCA OS DADOS DO PERÍODO SELECIONADO (Faturado / Recebido do Mês/Ano)
             query = """
                 SELECT cp.id, cp.consultation_id, ch.date, p.pet_name, c.first_name, cp.payment_method, cp.amount, cp.installments, cp.status
                 FROM consultation_payments cp
@@ -173,13 +202,21 @@ class CashFlowTab(QWidget):
             self.db.cursor.execute(query, tuple(params))
             registros = self.db.cursor.fetchall()
 
+            # 2. BUSCA GERAL DE TODAS AS PENDÊNCIAS EM ABERTO (Independente de mês/ano)
+            self.db.cursor.execute("""
+                SELECT cp.amount 
+                FROM consultation_payments cp 
+                WHERE LOWER(cp.status) = 'pendente'
+            """)
+            pendencias_geral_db = self.db.cursor.fetchall()
+            total_pendente = sum(p[0] for p in pendencias_geral_db)
+
             meses_dict = {
                 "01": "Janeiro", "02": "Fevereiro", "03": "Março", "04": "Abril",
                 "05": "Maio", "06": "Junho", "07": "Julho", "08": "Agosto",
                 "09": "Setembro", "10": "Outubro", "11": "Novembro", "12": "Dezembro"
             }
 
-            # Agrupa os pagamentos por consultation_id para unir as divisões de pagamento em uma única linha estruturada
             consultas_dict = {}
             for pay_id, consult_id, data_atend, pet_name, client_name, metodo, valor, parcelas, status in registros:
                 if consult_id not in consultas_dict:
@@ -191,7 +228,6 @@ class CashFlowTab(QWidget):
                         "pagamentos": []
                     }
                 
-                # Formata a linha de pagamento individual
                 if metodo and metodo.lower() == "crédito parcelado" and parcelas and parcelas > 1:
                     detalhe_metodo = f"{metodo} ({parcelas}x)"
                 else:
@@ -206,7 +242,6 @@ class CashFlowTab(QWidget):
                     "status": status
                 })
 
-            # Prepara a lista ordenada para a tabela incluindo os separadores de mês
             linhas_processadas = []
             mes_atual_controle = None
 
@@ -252,26 +287,19 @@ class CashFlowTab(QWidget):
 
                     pags = dados_cons["pagamentos"]
                     
-                    # Constrói o formato de lista alinhada usando HTML básico
                     lista_metodos = "<br>".join([p["texto"] for p in pags])
                     lista_valores = "<br>".join([p["valor_str"] for p in pags])
-                    
-                    valor_total = sum(p["valor_num"] for p in pags)
-                    val_total_str = f"R$ {valor_total:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-                    # Salva o ID do primeiro pagamento como referência principal para baixa
                     item_id = QTableWidgetItem(data_fmt)
                     item_id.setData(Qt.ItemDataRole.UserRole, pags[0]["id"])
 
                     self.tabela_extrato.setItem(row_idx, 0, item_id)
                     self.tabela_extrato.setItem(row_idx, 1, QTableWidgetItem(dados_cons["pet_tutor"]))
                     
-                    # Coloca a lista detalhada de formas de pagamento
                     item_pgto = QTableWidgetItem()
                     item_pgto.setData(Qt.ItemDataRole.DisplayRole, lista_metodos)
                     self.tabela_extrato.setItem(row_idx, 2, item_pgto)
                     
-                    # Coloca a lista de valores correspondentes
                     self.tabela_extrato.setItem(row_idx, 3, QTableWidgetItem(lista_valores))
                     
                     status_geral = dados_cons["status"]
@@ -282,26 +310,41 @@ class CashFlowTab(QWidget):
                         item_status.setForeground(QColor("#2f855a"))
                     self.tabela_extrato.setItem(row_idx, 4, item_status)
 
-            # Cálculo dos indicadores do mês com base nos registros listados
+            # Cálculo do Recebido apenas para os registros exibidos no período
             total_recebido = 0
-            total_pendente = 0
             todas_transacoes = []
             for d in consultas_dict.values():
                 for p in d["pagamentos"]:
                     todas_transacoes.append(p)
                     if p["status"] and p["status"].lower() == 'pago':
                         total_recebido += p["valor_num"]
-                    elif p["status"] and p["status"].lower() == 'pendente':
-                        total_pendente += p["valor_num"]
 
-            faturamento = total_recebido + total_pendente
+            faturamento = total_recebido
 
-            if todas_transacoes:
-                self.lbl_fat_mes.setText(f"Faturamento Mês: R$ {faturamento:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-                self.lbl_total_recebido.setText(f"Total Recebido: R$ {total_recebido:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-                self.lbl_total_pendente.setText(f"Total Pendente: R$ {total_pendente:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+            # Atualiza o título do painel
+            mes_texto = self.combo_filtro_mes.currentText()
+            ano_texto = self.combo_filtro_ano.currentText()
+
+            if mes_idx > 0 and ano_texto != "Todos os Anos":
+                rotulo_periodo = f"Mês ({mes_texto.split(' - ')[1]} / {ano_texto})"
+            elif mes_idx > 0:
+                rotulo_periodo = f"Mês ({mes_texto.split(' - ')[1]})"
+            elif ano_texto != "Todos os Anos":
+                rotulo_periodo = f"Consolidado Anual ({ano_texto})"
             else:
-                self.lbl_fat_mes.setText("Faturamento Mês: —")
+                rotulo_periodo = "Geral (Todos os Anos e Meses)"
+
+            self.resumo_group.setTitle(f"Indicadores — {rotulo_periodo}")
+
+            if todas_transacoes or total_pendente > 0:
+                self.lbl_fat_mes.setText(f"Faturamento: R$ {faturamento:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+                self.lbl_total_recebido.setText(f"Total Recebido: R$ {total_recebido:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+                
+                # Exibe o total pendente GERAL
+                pendente_str = f"R$ {total_pendente:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                self.lbl_total_pendente.setText(f"Total Pendente: {pendente_str}")
+            else:
+                self.lbl_fat_mes.setText("Faturamento: —")
                 self.lbl_total_recebido.setText("Total Recebido: —")
                 self.lbl_total_pendente.setText("Total Pendente: —")
 
@@ -330,7 +373,6 @@ class CashFlowTab(QWidget):
             return
 
         try:
-            # Dá baixa em todos os pagamentos vinculados àquela consulta
             self.db.cursor.execute("SELECT consultation_id FROM consultation_payments WHERE id = ?", (pay_id,))
             res = self.db.cursor.fetchone()
             if res:

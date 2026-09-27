@@ -236,13 +236,13 @@ class AgendaTableWidget(QWidget):
 
         left_layout.addWidget(self.group_detalhes)
 
-        # Histórico do Dia Selecionado
-        self.group_historico = QGroupBox("Atendimento do Dia")
+        # Histórico Recente do Paciente
+        self.group_historico = QGroupBox("Histórico Recente (Últimas Consultas)")
         self.group_historico.setStyleSheet("QGroupBox { font-weight: bold; font-size: 13px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px; padding-top: 8px; }")
         
         historico_layout = QVBoxLayout(self.group_historico)
         self.txt_historico = QTextBrowser()
-        self.txt_historico.setPlaceholderText("Nenhum atendimento registrado para esta data.")
+        self.txt_historico.setPlaceholderText("Nenhum histórico de atendimento registrado para este paciente.")
         historico_layout.addWidget(self.txt_historico)
 
         left_layout.addWidget(self.group_historico)
@@ -618,6 +618,7 @@ class AgendaTableWidget(QWidget):
                 self.lbl_det_peso.setText(peso_str)
 
                 self.atualizar_paineis_atendimento(p_id)
+                self.carregar_dados_atendimento_existente(p_id, self.date_edit.date().toString("yyyy-MM-dd"))
             else:
                 self.limpar_detalhes()
 
@@ -626,69 +627,102 @@ class AgendaTableWidget(QWidget):
             self.limpar_detalhes()
 
     def atualizar_paineis_atendimento(self, pet_id):
-        data_selecionada_str = self.date_edit.date().toString("yyyy-MM-dd")
+        try:
+            # Busca os últimos 5 atendimentos na tabela correta (consultation_history)
+            self.db.cursor.execute("""
+                SELECT id, date, notes 
+                FROM consultation_history 
+                WHERE pet_id = ? 
+                ORDER BY date DESC LIMIT 5
+            """, (pet_id,))
+            registros = self.db.cursor.fetchall()
+            
+            if registros:
+                html_content = ""
+                for hist_id, data_hist, notas in registros:
+                    # Formata a data de AAAA-MM-DD para DD/MM/AAAA
+                    partes = data_hist.split("-")
+                    data_fmt = f"{partes[2]}/{partes[1]}/{partes[0]}" if len(partes) == 3 else data_hist
+                    
+                    # Adiciona a data e as notas (o resumo, serviços ou vacinas que gravaste)
+                    html_content += f"<b style='color: #ffbf00;'>Data: {data_fmt}</b><br>{notas.replace('\n', '<br>')}<br><hr>"
+                
+                self.txt_historico.setHtml(html_content)
+            else:
+                self.txt_historico.setHtml("<i>Nenhum histórico anterior encontrado para este pet.</i>")
+                
+        except Exception as e:
+            print(f"Erro ao atualizar painéis de histórico: {e}")
 
-        resumo_do_dia = self.db.get_historico_do_dia(pet_id, data_selecionada_str)
-        if resumo_do_dia:
-            self.current_historico_id, texto_salvo = resumo_do_dia
-            self.txt_atendimento.setText(texto_salvo)
-            self.txt_historico.setHtml(f"<b>Atendimento do dia:</b><br>{texto_salvo.replace('\n', '<br>')}")
-            self.btn_salvar_atendimento.setText("Atualizar Atendimento")
-
-            try:
-                self.db.cursor.execute("""
-                    SELECT payment_method, amount, installments, status 
-                    FROM consultation_payments 
-                    WHERE consultation_id = ?
-                """, (self.current_historico_id,))
-                pagamentos_salvos = self.db.cursor.fetchall()
-
-                if pagamentos_salvos:
-                    self.txt_valor_atendimento.clear()
-                    self.pagamentos_personalizados = None
-                    for chk in [self.chk_pag_pix, self.chk_pag_dinheiro, self.chk_pag_transf, self.chk_pag_debito, self.chk_pag_credito, self.chk_pag_cred_parc, self.chk_pag_pendente]:
-                        chk.setChecked(False)
-                        chk.setEnabled(True)
-                    self.txt_parcelas.clear()
-                    self.txt_parcelas.setEnabled(True)
-
-                    if len(pagamentos_salvos) > 1:
-                        self.pagamentos_personalizados = [(m, v, p, s) for m, v, p, s in pagamentos_salvos]
-                        valor_total_hist = sum(v for _, v, _, _ in pagamentos_salvos)
-                        val_str = f"{valor_total_hist:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-                        self.txt_valor_atendimento.setText(val_str)
-
-                        for chk in [self.chk_pag_pix, self.chk_pag_dinheiro, self.chk_pag_transf, self.chk_pag_debito, self.chk_pag_credito, self.chk_pag_cred_parc, self.chk_pag_pendente]:
-                            chk.setEnabled(False)
-                        self.txt_parcelas.setEnabled(False)
-                    else:
-                        metodo, valor, parcelas, status = pagamentos_salvos[0]
-                        val_str = f"{valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-                        self.txt_valor_atendimento.setText(val_str)
-
-                        if metodo == "PIX": self.chk_pag_pix.setChecked(True)
-                        elif metodo == "Dinheiro": self.chk_pag_dinheiro.setChecked(True)
-                        elif metodo == "Transferência": self.chk_pag_transf.setChecked(True)
-                        elif metodo == "Débito": self.chk_pag_debito.setChecked(True)
-                        elif metodo == "Crédito à vista": self.chk_pag_credito.setChecked(True)
-                        elif metodo == "Valor Pendente": self.chk_pag_pendente.setChecked(True)
-                        elif metodo == "Crédito parcelado":
-                            self.chk_pag_cred_parc.setChecked(True)
-                            self.txt_parcelas.setText(str(parcelas))
-            except Exception as ex:
-                print(f"Erro ao carregar pagamentos salvos: {ex}")
-        else:
-            self.current_historico_id = None
-            self.txt_atendimento.clear()
-            self.txt_historico.setHtml("<i>Nenhum atendimento registrado para esta data.</i>")
+    def carregar_dados_atendimento_existente(self, pet_id, data_str):
+        """Busca se já existe histórico e pagamento salvos para este pet nesta data e preenche o formulário."""
+        try:
+            self.chk_v8.setChecked(False)
+            self.chk_v10.setChecked(False)
+            self.chk_v4.setChecked(False)
+            self.chk_v5.setChecked(False)
+            self.chk_raiva.setChecked(False)
+            self.chk_giardia.setChecked(False)
+            self.chk_gripe.setChecked(False)
+            self.chk_feLV.setChecked(False)
+            self.txt_vermifugo_opc.clear()
+            self.txt_antipulgas_opc.clear()
             self.txt_valor_atendimento.clear()
-            self.pagamentos_personalizados = None
+            self.txt_atendimento.clear()
             for chk in [self.chk_pag_pix, self.chk_pag_dinheiro, self.chk_pag_transf, self.chk_pag_debito, self.chk_pag_credito, self.chk_pag_cred_parc, self.chk_pag_pendente]:
                 chk.setChecked(False)
                 chk.setEnabled(True)
             self.txt_parcelas.clear()
             self.txt_parcelas.setEnabled(True)
-            self.btn_salvar_atendimento.setText("Salvar Atendimento")
+            self.pagamentos_personalizados = None
+
+            self.db.cursor.execute("SELECT id, notes FROM consultation_history WHERE pet_id = ? AND date = ?", (pet_id, data_str))
+            hist_row = self.db.cursor.fetchone()
+            
+            if hist_row:
+                self.current_historico_id, notes = hist_row
+                self.txt_atendimento.setPlainText(notes)
+                self.btn_salvar_atendimento.setText("Atualizar Atendimento")
+
+                if "V8" in notes: self.chk_v8.setChecked(True)
+                if "V10" in notes: self.chk_v10.setChecked(True)
+                if "V4" in notes: self.chk_v4.setChecked(True)
+                if "V5" in notes: self.chk_v5.setChecked(True)
+                if "Antirrábica" in notes: self.chk_raiva.setChecked(True)
+                if "Giárdia" in notes: self.chk_giardia.setChecked(True)
+                if "Gripe Canina" in notes: self.chk_gripe.setChecked(True)
+                if "FeLV" in notes: self.chk_feLV.setChecked(True)
+
+                self.db.cursor.execute("SELECT payment_method, amount, installments, status FROM consultation_payments WHERE consultation_id = ?", (self.current_historico_id,))
+                pags = self.db.cursor.fetchall()
+                
+                if pags:
+                    if len(pags) == 1:
+                        metodo, valor, parcelas, status = pags[0]
+                        val_str = f"{valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                        self.txt_valor_atendimento.setText(val_str)
+                        
+                        if metodo == "PIX": self.chk_pag_pix.setChecked(True)
+                        elif metodo == "Dinheiro": self.chk_pag_dinheiro.setChecked(True)
+                        elif metodo == "Transferência": self.chk_pag_transf.setChecked(True)
+                        elif metodo == "Débito": self.chk_pag_debito.setChecked(True)
+                        elif metodo == "Crédito à vista": self.chk_pag_credito.setChecked(True)
+                        elif metodo == "Crédito parcelado":
+                            self.chk_pag_cred_parc.setChecked(True)
+                            self.txt_parcelas.setText(str(parcelas))
+                        elif metodo == "Valor Pendente": self.chk_pag_pendente.setChecked(True)
+                    else:
+                        self.pagamentos_personalizados = [(m, v, p, s) for m, v, p, s in pags]
+                        total_dividido = sum(v for _, v, _, _ in pags)
+                        self.txt_valor_atendimento.setText(f"{total_dividido:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+                        for chk in [self.chk_pag_pix, self.chk_pag_dinheiro, self.chk_pag_transf, self.chk_pag_debito, self.chk_pag_credito, self.chk_pag_cred_parc, self.chk_pag_pendente]:
+                            chk.setEnabled(False)
+                        self.txt_parcelas.setEnabled(False)
+            else:
+                self.current_historico_id = None
+                self.btn_salvar_atendimento.setText("Salvar Atendimento")
+        except Exception as e:
+            print(f"Erro ao carregar dados existentes do atendimento: {e}")
 
     def salvar_ou_atualizar_atendimento(self):
         if not self.current_pet_id or not self.current_client_id:
@@ -696,22 +730,8 @@ class AgendaTableWidget(QWidget):
             return
 
         data_app = self.date_edit.date()
-        hoje = QDate.currentDate()
-
-        if data_app < hoje:
-            senha, ok = QInputDialog.getText(
-                self, "Segurança", "Este atendimento é de um dia anterior.\nDigite a senha de administrador para alterar:", 
-                QLineEdit.EchoMode.Password
-            )
-            if not ok:
-                return
-            if senha != "1234":
-                QMessageBox.critical(self, "Erro", "Senha incorreta! Alteração não permitida.")
-                return
-
         texto = self.txt_atendimento.toPlainText().strip()
         data_str = data_app.toString("yyyy-MM-dd")
-        
         if not texto:
             texto = f"- {self.current_service_type}"
         
@@ -820,6 +840,22 @@ class AgendaTableWidget(QWidget):
 
             QMessageBox.information(self, "Sucesso", msg)
 
+            # --- ATUALIZAÇÃO AUTOMÁTICA DA ABA DE CAIXA EM TEMPO REAL ---
+            try:
+                parent_main = self.window()
+                if hasattr(parent_main, "cash_flow_tab") and parent_main.cash_flow_tab:
+                    for metodo_caixa in ["carregar_dados_caixa", "load_data", "carregar_dados"]:
+                        if hasattr(parent_main.cash_flow_tab, metodo_caixa):
+                            getattr(parent_main.cash_flow_tab, metodo_caixa)()
+                            break
+                if hasattr(self, "parent") and self.parent():
+                    p = self.parent()
+                    if hasattr(p, "cash_flow_tab") and p.cash_flow_tab:
+                        p.cash_flow_tab.carregar_dados_caixa()
+            except Exception as ex:
+                print(f"Erro ao atualizar caixa automaticamente: {ex}")
+            # ------------------------------------------------------------
+
             self.chk_v8.setChecked(False)
             self.chk_v10.setChecked(False)
             self.chk_v4.setChecked(False)
@@ -860,7 +896,6 @@ class AgendaTableWidget(QWidget):
         self.txt_atendimento.clear()
         self.txt_historico.clear()
         
-        # Limpa o pagamento personalizado com força
         self.pagamentos_personalizados = None
         
         self.chk_v8.setChecked(False)
@@ -942,29 +977,30 @@ class MainUI(QMainWindow):
         self.client_list_ui = ClientListUI(parent=self, db=self.db)
         self.agenda_tab = AgendaTab(parent=self, db=self.db)
         
-        # Mantém a inicialização correta do CashFlowTab
         self.cash_flow_tab = CashFlowTab(parent=self, db=self.db, main_window=self)
 
-        # Estoque mantemos temporariamente como "Em desenvolvimento" (ou crie a classe depois)
         self.inventory_tab = QWidget()  
         inventory_layout = QVBoxLayout(self.inventory_tab)
         inventory_layout.addWidget(QLabel("Estoque - Em desenvolvimento"))
 
-        # Adicionando as abas na ordem correta
         self.tabs.addTab(self.home_tab, "Início")
         self.tabs.addTab(self.client_list_ui, "Clientes")
         self.tabs.addTab(self.agenda_tab, "Agendamento")  
         self.tabs.addTab(self.inventory_tab, "Estoque")
-        self.tabs.addTab(self.cash_flow_tab, "Caixa") # Usa a aba real aqui!
+        self.tabs.addTab(self.cash_flow_tab, "Caixa")
 
         for i in range(5):
             self.tabs.tabBar().setTabButton(i, QTabBar.ButtonPosition.RightSide, None)
 
         self.client_list_ui.load_data()
+
     def ao_mudar_aba(self, index):
         widget_atual = self.tabs.widget(index)
         if widget_atual == self.agenda_tab:
             self.agenda_tab.carregar_dados_clientes()
+        elif widget_atual == self.cash_flow_tab:
+            if hasattr(self.cash_flow_tab, "carregar_dados_caixa"):
+                self.cash_flow_tab.carregar_dados_caixa()
 
     def close_tab(self, index):
         widget = self.tabs.widget(index)
@@ -972,3 +1008,35 @@ class MainUI(QMainWindow):
             return
         self.tabs.removeTab(index)
         widget.deleteLater()
+
+    def carregar_pagamento_para_edicao(self, pay_id):
+        """
+        Função chamada pela aba de Detalhes do Cliente para editar um pagamento na tela inicial.
+        """
+        if not self.db:
+            return
+            
+        try:
+            # 1. Buscar a data e o pet associados a este pagamento no banco de dados
+            self.db.cursor.execute("""
+                SELECT ch.pet_id, ch.date 
+                FROM consultation_payments cp
+                JOIN consultation_history ch ON cp.consultation_id = ch.id
+                WHERE cp.id = ?
+            """, (pay_id,))
+            resultado = self.db.cursor.fetchone()
+            
+            if resultado:
+                pet_id, data_atend = resultado
+                
+                # 2. Mudar a data no calendário da aba inicial (AgendaTableWidget)
+                ano, mes, dia = map(int, data_atend.split('-'))
+                self.home_tab.date_edit.setDate(QDate(ano, mes, dia))
+                
+                # 3. Forçar o carregamento dos dados do formulário para aquele pet na data específica
+                self.home_tab.current_pet_id = pet_id
+                self.home_tab.carregar_dados_atendimento_existente(pet_id, data_atend)
+            else:
+                QMessageBox.warning(self, "Aviso", "Pagamento não encontrado no banco de dados.")
+        except Exception as e:
+            QMessageBox.critical(self, "Erro", f"Erro ao tentar carregar o pagamento: {e}")
