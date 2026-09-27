@@ -9,6 +9,7 @@ from PyQt6.QtCore import QDate, Qt
 from PyQt6.QtGui import QIcon, QTextCharFormat, QColor
 from ui_client_list import ClientListUI
 from ui_agenda import AgendaTab, AgendaItemWidget
+from ui_cash_flow import CashFlowTab
 
 class MoedaLineEdit(QLineEdit):
     """Campo de texto personalizado que formata automaticamente o valor para o padrão monetário (ex: 1.000,00)."""
@@ -940,26 +941,26 @@ class MainUI(QMainWindow):
         self.home_tab = AgendaTableWidget(parent=self, db=self.db)
         self.client_list_ui = ClientListUI(parent=self, db=self.db)
         self.agenda_tab = AgendaTab(parent=self, db=self.db)
+        
+        # Mantém a inicialização correta do CashFlowTab
+        self.cash_flow_tab = CashFlowTab(parent=self, db=self.db, main_window=self)
 
+        # Estoque mantemos temporariamente como "Em desenvolvimento" (ou crie a classe depois)
         self.inventory_tab = QWidget()  
         inventory_layout = QVBoxLayout(self.inventory_tab)
         inventory_layout.addWidget(QLabel("Estoque - Em desenvolvimento"))
 
-        self.cash_flow_tab = QWidget()
-        cash_flow_layout = QVBoxLayout(self.cash_flow_tab)
-        cash_flow_layout.addWidget(QLabel("Caixa - Em desenvolvimento"))
-
+        # Adicionando as abas na ordem correta
         self.tabs.addTab(self.home_tab, "Início")
         self.tabs.addTab(self.client_list_ui, "Clientes")
         self.tabs.addTab(self.agenda_tab, "Agendamento")  
         self.tabs.addTab(self.inventory_tab, "Estoque")
-        self.tabs.addTab(self.cash_flow_tab, "Caixa") 
+        self.tabs.addTab(self.cash_flow_tab, "Caixa") # Usa a aba real aqui!
 
         for i in range(5):
             self.tabs.tabBar().setTabButton(i, QTabBar.ButtonPosition.RightSide, None)
 
         self.client_list_ui.load_data()
-
     def ao_mudar_aba(self, index):
         widget_atual = self.tabs.widget(index)
         if widget_atual == self.agenda_tab:

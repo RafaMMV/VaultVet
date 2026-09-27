@@ -80,6 +80,7 @@ class Database:
                     client_id INTEGER,
                     date TEXT NOT NULL,
                     notes TEXT,
+                    appointment_id INTEGER,
                     FOREIGN KEY (pet_id) REFERENCES patients (id),
                     FOREIGN KEY (client_id) REFERENCES clients (id)
                 )
@@ -227,14 +228,21 @@ class Database:
             print(f"Erro ao buscar histórico anterior por data: {e}")
             return None
 
-    def get_historico_do_dia(self, pet_id, data_atual):
-        """Busca se já existe um atendimento salvo exatamente para o dia atual."""
+    def get_historico_do_dia(self, pet_id, data_atual, appointment_id=None):
+        """Busca se já existe um atendimento salvo exatamente para o agendamento do dia."""
         try:
-            self.cursor.execute("""
-                SELECT id, notes FROM consultation_history 
-                WHERE pet_id = ? AND date = ?
-                LIMIT 1
-            """, (pet_id, data_atual))
+            if appointment_id:
+                self.cursor.execute("""
+                    SELECT id, notes FROM consultation_history 
+                    WHERE pet_id = ? AND date = ? AND appointment_id = ?
+                    LIMIT 1
+                """, (pet_id, data_atual, appointment_id))
+            else:
+                self.cursor.execute("""
+                    SELECT id, notes FROM consultation_history 
+                    WHERE pet_id = ? AND date = ?
+                    LIMIT 1
+                """, (pet_id, data_atual))
             return self.cursor.fetchone()
         except sqlite3.Error as e:
             print(f"Erro ao buscar histórico do dia: {e}")
