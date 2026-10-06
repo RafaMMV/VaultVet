@@ -1,0 +1,78 @@
+{
+  "ano": 2026,
+  "tutores": 400,
+  "pets": 589,
+  "dias": 313,
+  "atendimentos": 2367,
+  "media_diaria": 7.56,
+  "tipos": {
+    "Vacina": 660,
+    "doses": 728,
+    "Consulta": 1325,
+    "exames": 260,
+    "Retorno": 382
+  },
+  "mensal": {
+    "2026-01": {
+      "Vacina": 56,
+      "Consulta": 106,
+      "Retorno": 26
+    },
+    "2026-02": {
+      "Vacina": 55,
+      "Consulta": 117,
+      "Retorno": 19
+    },
+    "2026-03": {
+      "Retorno": 44,
+      "Vacina": 58,
+      "Consulta": 105
+    },
+    "2026-04": {
+      "Consulta": 124,
+      "Retorno": 35,
+      "Vacina": 46
+    },
+    "2026-05": {
+      "Vacina": 57,
+      "Consulta": 127,
+      "Retorno": 21
+    },
+    "2026-06": {
+      "Vacina": 61,
+      "Consulta": 100,
+      "Retorno": 34
+    },
+    "2026-07": {
+      "Consulta": 109,
+      "Retorno": 32,
+      "Vacina": 62
+    },
+    "2026-08": {
+      "Consulta": 112,
+      "Retorno": 28,
+      "Vacina": 39
+    },
+    "2026-09": {
+      "Vacina": 56,
+      "Retorno": 31,
+      "Consulta": 108
+    },
+    "2026-10": {
+      "Consulta": 105,
+      "Vacina": 55,
+      "Retorno": 30
+    },
+    "2026-11": {
+      "Vacina": 50,
+      "Consulta": 116,
+      "Retorno": 40
+    },
+    "2026-12": {
+      "Vacina": 65,
+      "Consulta": 96,
+      "Retorno": 42
+    }
+  },
+  "pagamentos_pendentes": 153
+}
