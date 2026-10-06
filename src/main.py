@@ -2,6 +2,7 @@ import sys
 from PyQt6.QtWidgets import QApplication
 from database import Database
 from ui_main import MainUI
+from theme import apply_base_style
 
 class AppController:
     def __init__(self):
@@ -64,5 +65,6 @@ class AppController:
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    apply_base_style(app)
     controller = AppController()
     sys.exit(app.exec())

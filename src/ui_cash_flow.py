@@ -1,3 +1,4 @@
+from theme import apply_widget_style
 from datetime import datetime
 from collections import defaultdict
 from PyQt6.QtWidgets import (
@@ -17,6 +18,8 @@ class CashFlowTab(QWidget):
         self.main_window = main_window
         
         self.init_ui()
+        from theme import compact_controls
+        compact_controls(self)
         self.carregar_dados_caixa()
     
     def load_data(self):
@@ -31,7 +34,7 @@ class CashFlowTab(QWidget):
         # Cabeçalho / Título da Aba
         top_layout = QHBoxLayout()
         self.title_label = QLabel("Controle de Caixa e Financeiro")
-        self.title_label.setStyleSheet("font-size: 16px; font-weight: bold;")
+        apply_widget_style(self.title_label, "style4")
         top_layout.addWidget(self.title_label)
         top_layout.addStretch()
         
@@ -44,17 +47,17 @@ class CashFlowTab(QWidget):
 
         # --- BLOCO SUPERIOR: Resumo / Indicadores ---
         self.resumo_group = QGroupBox("Indicadores do Período")
-        self.resumo_group.setStyleSheet("QGroupBox { font-weight: bold; font-size: 13px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px; padding-top: 8px; }")
+        apply_widget_style(self.resumo_group, "style5")
         resumo_layout = QHBoxLayout(self.resumo_group)
 
         self.lbl_fat_mes = QLabel("Faturamento: —")
-        self.lbl_fat_mes.setStyleSheet("font-size: 13px; font-weight: normal;")
+        apply_widget_style(self.lbl_fat_mes, "style6")
         
         self.lbl_total_recebido = QLabel("Total Recebido: —")
-        self.lbl_total_recebido.setStyleSheet("font-size: 13px; font-weight: normal;")
+        apply_widget_style(self.lbl_total_recebido, "style6")
         
         self.lbl_total_pendente = QLabel("Total Pendente: —")
-        self.lbl_total_pendente.setStyleSheet("font-size: 13px; font-weight: normal; color: #ffbf00;")
+        apply_widget_style(self.lbl_total_pendente, "style7")
 
         resumo_layout.addWidget(self.lbl_fat_mes)
         resumo_layout.addWidget(self.lbl_total_recebido)
@@ -64,7 +67,7 @@ class CashFlowTab(QWidget):
 
         # --- BLOCO PRINCIPAL: Extrato de Movimentações ---
         extrato_group = QGroupBox("Extrato e Movimentações")
-        extrato_group.setStyleSheet("QGroupBox { font-weight: bold; font-size: 13px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px; padding-top: 8px; }")
+        apply_widget_style(extrato_group, "style5")
         extrato_layout = QVBoxLayout(extrato_group)
 
         # Filtros (Status, Mês, Ano e Botões de Atalho Rápido Mensal/Anual)
@@ -113,6 +116,8 @@ class CashFlowTab(QWidget):
         self.tabela_extrato.setHorizontalHeaderLabels(["Data", "Pet / Tutor", "Forma Pgto", "Valor Total", "Status"])
         self.tabela_extrato.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         
+        self.tabela_extrato.cellDoubleClicked.connect(self.abrir_consulta)
+        self.tabela_extrato.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.tabela_extrato.verticalHeader().setVisible(False)
         self.tabela_extrato.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         extrato_layout.addWidget(self.tabela_extrato)
@@ -126,6 +131,12 @@ class CashFlowTab(QWidget):
         extrato_layout.addLayout(acoes_tabela_layout)
         
         main_layout.addWidget(extrato_group)
+
+    def abrir_consulta(self, row, column):
+        item = self.tabela_extrato.item(row, 0)
+        pay_id = item.data(Qt.ItemDataRole.UserRole) if item else None
+        if pay_id and self.main_window:
+            self.main_window.carregar_pagamento_para_edicao(pay_id)
 
     def ativar_visao_mensal(self):
         """Atalho para selecionar o mês atual e manter o ano atual."""
@@ -183,10 +194,6 @@ class CashFlowTab(QWidget):
             """
             params = []
 
-            if status_filtro == "Apenas Entradas":
-                query += " AND LOWER(cp.status) = 'pago'"
-            elif status_filtro == "Apenas Pendências":
-                query += " AND LOWER(cp.status) = 'pendente'"
 
             if mes_idx > 0:
                 mes_num = self.combo_filtro_mes.currentData()
@@ -242,6 +249,13 @@ class CashFlowTab(QWidget):
                     "status": status
                 })
 
+            for dados in consultas_dict.values():
+                dados["status"] = "Pendente" if any((p["status"] or "").lower() == "pendente" for p in dados["pagamentos"]) else "Pago"
+            if status_filtro == "Apenas Entradas":
+                consultas_dict = {k:v for k,v in consultas_dict.items() if v["status"] == "Pago"}
+            elif status_filtro == "Apenas Pendências":
+                consultas_dict = {k:v for k,v in consultas_dict.items() if v["status"] == "Pendente"}
+            self.tabela_extrato.clearSpans()
             linhas_processadas = []
             mes_atual_controle = None
 
@@ -270,7 +284,7 @@ class CashFlowTab(QWidget):
                     item_div.setBackground(QColor("#2d3748"))
                     item_div.setForeground(QColor("#ffffff"))
                     font = item_div.font()
-                    font.setBold(True)
+                    font.setBold(False)
                     item_div.setFont(font)
                     item_div.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                     
@@ -287,8 +301,12 @@ class CashFlowTab(QWidget):
 
                     pags = dados_cons["pagamentos"]
                     
-                    lista_metodos = "<br>".join([p["texto"] for p in pags])
-                    lista_valores = "<br>".join([p["valor_str"] for p in pags])
+                    lista_metodos = " + ".join(p["texto"] for p in pags)
+                    total = sum(p["valor_num"] for p in pags)
+                    lista_valores = f"{total:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                    if len(pags) > 1:
+                        detalhes = " + ".join(f'{p["valor_str"].removeprefix("R$ ")} {p["texto"]}' for p in pags)
+                        lista_valores += f" ({detalhes})"
 
                     item_id = QTableWidgetItem(data_fmt)
                     item_id.setData(Qt.ItemDataRole.UserRole, pags[0]["id"])
@@ -300,7 +318,9 @@ class CashFlowTab(QWidget):
                     item_pgto.setData(Qt.ItemDataRole.DisplayRole, lista_metodos)
                     self.tabela_extrato.setItem(row_idx, 2, item_pgto)
                     
-                    self.tabela_extrato.setItem(row_idx, 3, QTableWidgetItem(lista_valores))
+                    item_valor = QTableWidgetItem(lista_valores)
+                    item_valor.setToolTip(lista_valores)
+                    self.tabela_extrato.setItem(row_idx, 3, item_valor)
                     
                     status_geral = dados_cons["status"]
                     item_status = QTableWidgetItem(status_geral)

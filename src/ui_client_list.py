@@ -1,3 +1,4 @@
+from theme import apply_widget_style
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QTreeWidget, 
     QTreeWidgetItem, QMessageBox, QHBoxLayout, QPushButton, QDialog
@@ -12,6 +13,8 @@ class ClientListUI(QWidget):
         super().__init__(parent)
         self.db = db
         self.init_ui()
+        from theme import compact_controls
+        compact_controls(self)
 
     def init_ui(self):
         main_layout = QVBoxLayout(self)
@@ -19,7 +22,7 @@ class ClientListUI(QWidget):
         # --- Criação de um topo com botão de Ação ---
         top_layout = QHBoxLayout()
         self.btn_novo_cadastro = QPushButton("+ Novo Cadastro")
-        self.btn_novo_cadastro.setStyleSheet("font-weight: bold; padding: 6px;")
+        apply_widget_style(self.btn_novo_cadastro, "style3")
         # Conecta o clique do botão à função que troca de aba
         self.btn_novo_cadastro.clicked.connect(self.ir_para_cadastro)
         

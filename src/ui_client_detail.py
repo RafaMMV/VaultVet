@@ -1,3 +1,5 @@
+from pet_photo import PHOTO_STYLE, show_photo, choose_photo, save_photo
+from theme import apply_widget_style
 from datetime import datetime
 import os
 import shutil
@@ -26,6 +28,8 @@ class ClientDetailTab(QWidget):
         self._is_modified_flag = False  # Flag interna de alterações
         
         self.init_ui()
+        from theme import compact_controls
+        compact_controls(self)
         self.load_client_data()
         self.load_pets_list()
         self.load_historico_cliente(None) # Carrega o histórico geral de todos os pets inicialmente
@@ -50,13 +54,13 @@ class ClientDetailTab(QWidget):
         # Cabeçalho / Ações Gerais
         top_layout = QHBoxLayout()
         self.title_label = QLabel("Detalhes do Cliente")
-        self.title_label.setStyleSheet("font-size: 16px; font-weight: bold;")
+        apply_widget_style(self.title_label, "style4")
         
         self.save_client_button = QPushButton("Salvar Alterações do Tutor")
         self.save_client_button.clicked.connect(self.save_client_changes)
 
         self.delete_client_button = QPushButton("Remover Cliente")
-        self.delete_client_button.setStyleSheet("color: #c53030; font-weight: bold;")
+        apply_widget_style(self.delete_client_button, "style8")
         self.delete_client_button.clicked.connect(self.confirm_delete_client)
 
         top_layout.addWidget(self.title_label)
@@ -72,7 +76,7 @@ class ClientDetailTab(QWidget):
         left_container = QVBoxLayout()
 
         tutor_group = QGroupBox("Dados do Tutor")
-        tutor_group.setStyleSheet("QGroupBox { font-weight: bold; font-size: 13px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px; padding-top: 8px; }")
+        apply_widget_style(tutor_group, "style5")
         tutor_layout = QFormLayout(tutor_group)
 
         self.first_name_input = QLineEdit()
@@ -105,7 +109,7 @@ class ClientDetailTab(QWidget):
 
         # Bloco de Histórico de Atendimentos dos Pets
         self.group_historico_cliente = QGroupBox("Histórico de Atendimentos")
-        self.group_historico_cliente.setStyleSheet("QGroupBox { font-weight: bold; font-size: 13px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px; padding-top: 8px; }")
+        apply_widget_style(self.group_historico_cliente, "style5")
         
         hist_cliente_layout = QVBoxLayout(self.group_historico_cliente)
         self.txt_historico_cliente = QTextBrowser()
@@ -114,7 +118,7 @@ class ClientDetailTab(QWidget):
 
         btn_excluir_hist_layout = QHBoxLayout()
         self.btn_excluir_hist_cli = QPushButton("Excluir Atendimento por ID")
-        self.btn_excluir_hist_cli.setStyleSheet("color: #c53030; font-weight: bold;")
+        apply_widget_style(self.btn_excluir_hist_cli, "style8")
         self.btn_excluir_hist_cli.clicked.connect(self.solicitar_exclusao_historico_por_id)
         btn_excluir_hist_layout.addWidget(self.btn_excluir_hist_cli)
         
@@ -130,7 +134,7 @@ class ClientDetailTab(QWidget):
 
         # 1. Bloco de Histórico de Pagamentos (Substituiu Resumo / Pendências)
         self.group_pagamentos_cliente = QGroupBox("Histórico de Pagamentos")
-        self.group_pagamentos_cliente.setStyleSheet("QGroupBox { font-weight: bold; font-size: 13px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px; padding-top: 8px; }")
+        apply_widget_style(self.group_pagamentos_cliente, "style5")
         self.group_pagamentos_cliente.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         
         pag_cliente_layout = QVBoxLayout(self.group_pagamentos_cliente)
@@ -146,7 +150,7 @@ class ClientDetailTab(QWidget):
 
         # Rótulo para exibir o total em pendências
         self.lbl_total_pendente = QLabel("Total em Pendências: R$ 0,00")
-        self.lbl_total_pendente.setStyleSheet("color: #ffbf00; font-weight: bold; font-size: 13px;")
+        apply_widget_style(self.lbl_total_pendente, "style9")
         pag_cliente_layout.addWidget(self.lbl_total_pendente)
 
         # Tabela interativa de pagamentos
@@ -162,7 +166,7 @@ class ClientDetailTab(QWidget):
         # Botão para excluir pagamento por ID (caso ocorra algum erro)
         btn_excluir_pag_layout = QHBoxLayout()
         self.btn_excluir_pag_cli = QPushButton("Excluir Pagamento por ID")
-        self.btn_excluir_pag_cli.setStyleSheet("color: #c53030; font-weight: bold;")
+        apply_widget_style(self.btn_excluir_pag_cli, "style8")
         self.btn_excluir_pag_cli.clicked.connect(self.solicitar_exclusao_pagamento_por_id)
         btn_excluir_pag_layout.addWidget(self.btn_excluir_pag_cli)
         pag_cliente_layout.addLayout(btn_excluir_pag_layout)
@@ -171,7 +175,7 @@ class ClientDetailTab(QWidget):
 
         # 2. Bloco de Resultados de Exames
         self.group_exames = QGroupBox("Resultados de Exames")
-        self.group_exames.setStyleSheet("QGroupBox { font-weight: bold; font-size: 13px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px; padding-top: 8px; }")
+        apply_widget_style(self.group_exames, "style5")
         self.group_exames.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         
         exames_layout = QVBoxLayout(self.group_exames)
@@ -181,11 +185,11 @@ class ClientDetailTab(QWidget):
 
         exames_btn_layout = QHBoxLayout()
         self.btn_anexar_exame = QPushButton("Anexar")
-        self.btn_anexar_exame.setStyleSheet("font-size: 11px; padding: 4px;")
+        apply_widget_style(self.btn_anexar_exame, "style10")
         self.btn_anexar_exame.clicked.connect(self.anexar_exame_pet)
 
         self.btn_remover_exame = QPushButton("Remover")
-        self.btn_remover_exame.setStyleSheet("color: #c53030; font-weight: bold;")
+        apply_widget_style(self.btn_remover_exame, "style8")
         self.btn_remover_exame.clicked.connect(self.remover_exame_pet)
 
         exames_btn_layout.addWidget(self.btn_anexar_exame)
@@ -196,7 +200,7 @@ class ClientDetailTab(QWidget):
 
         # 3. Bloco de Controle e Histórico de Vacinas
         self.group_vacinas_cliente = QGroupBox("Controle e Histórico de Vacinas")
-        self.group_vacinas_cliente.setStyleSheet("QGroupBox { font-weight: bold; font-size: 13px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px; padding-top: 8px; }")
+        apply_widget_style(self.group_vacinas_cliente, "style5")
         self.group_vacinas_cliente.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         
         vacinas_cliente_layout = QVBoxLayout(self.group_vacinas_cliente)
@@ -212,7 +216,7 @@ class ClientDetailTab(QWidget):
         right_container = QVBoxLayout()
 
         pets_group = QGroupBox("Pets Vinculados")
-        pets_group.setStyleSheet("QGroupBox { font-weight: bold; font-size: 13px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px; padding-top: 8px; }")
+        apply_widget_style(pets_group, "style5")
         pets_layout = QVBoxLayout(pets_group)
 
         self.pets_list_widget = QListWidget()
@@ -225,7 +229,7 @@ class ClientDetailTab(QWidget):
         self.add_pet_button.clicked.connect(self.prepare_new_pet_form)
         
         self.remove_pet_button = QPushButton("Remover Pet Selecionado")
-        self.remove_pet_button.setStyleSheet("color: #c53030; font-weight: bold;")
+        apply_widget_style(self.remove_pet_button, "style8")
         self.remove_pet_button.clicked.connect(self.confirm_delete_pet)
 
         pets_btn_layout.addWidget(self.add_pet_button)
@@ -235,26 +239,28 @@ class ClientDetailTab(QWidget):
 
         # Ficha do Pet
         self.patient_group = QGroupBox("Ficha do Paciente (Pet)")
-        self.patient_group.setStyleSheet("QGroupBox { font-weight: bold; font-size: 13px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px; padding-top: 8px; }")
+        apply_widget_style(self.patient_group, "style5")
         patient_main_layout = QVBoxLayout(self.patient_group)
 
         foto_layout = QVBoxLayout()
         self.lbl_foto_pet = QLabel("Sem foto")
         self.lbl_foto_pet.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.lbl_foto_pet.setFixedSize(120, 120)
-        self.lbl_foto_pet.setStyleSheet("border: 1px dashed #aaa; background-color: #f9f9f9; color: #666; border-radius: 4px;")
+        self.lbl_foto_pet.setFixedSize(96, 96)
+        self.lbl_foto_pet.setStyleSheet(PHOTO_STYLE)
         
         botoes_foto_layout = QHBoxLayout()
         self.btn_carregar_foto = QPushButton("Carregar")
-        self.btn_carregar_foto.setStyleSheet("font-size: 11px; padding: 4px;")
+        apply_widget_style(self.btn_carregar_foto, "style10")
         self.btn_carregar_foto.clicked.connect(self.upload_pet_photo)
 
         self.btn_remover_foto = QPushButton("Remover")
-        self.btn_remover_foto.setStyleSheet("color: #c53030; font-weight: bold;")
+        apply_widget_style(self.btn_remover_foto, "style8")
         self.btn_remover_foto.clicked.connect(self.remove_pet_photo)
 
+        botoes_foto_layout.addStretch()
         botoes_foto_layout.addWidget(self.btn_carregar_foto)
         botoes_foto_layout.addWidget(self.btn_remover_foto)
+        botoes_foto_layout.addStretch()
         
         foto_layout.addWidget(self.lbl_foto_pet, alignment=Qt.AlignmentFlag.AlignCenter)
         foto_layout.addLayout(botoes_foto_layout)
@@ -303,7 +309,7 @@ class ClientDetailTab(QWidget):
         patient_main_layout.addLayout(patient_form_layout)
 
         self.save_pet_button = QPushButton("Salvar Alterações / Cadastrar Pet")
-        self.save_pet_button.setStyleSheet("font-weight: bold; padding: 6px;")
+        apply_widget_style(self.save_pet_button, "style3")
         
         try:
             self.save_pet_button.clicked.disconnect()
@@ -411,7 +417,7 @@ class ClientDetailTab(QWidget):
                     
                     status_item = QTableWidgetItem(status)
                     font = status_item.font()
-                    font.setBold(True)
+                    font.setBold(False)
                     status_item.setFont(font)
 
                     # Colore o status 
@@ -584,14 +590,10 @@ class ClientDetailTab(QWidget):
             QMessageBox.warning(self, "Aviso", "Selecione ou clique em um pet na lista primeiro para adicionar a foto.")
             return
 
-        file_name, _ = QFileDialog.getOpenFileName(self, "Selecionar Foto do Pet", "", "Imagens (*.png *.jpg *.jpeg)")
+        file_name = choose_photo(self)
         if file_name:
             try:
-                os.makedirs("pet_photos", exist_ok=True)
-                ext = os.path.splitext(file_name)[1]
-                dest_path = f"pet_photos/pet_{self.current_selected_pet_id}{ext}"
-                
-                shutil.copy(file_name, dest_path)
+                dest_path = save_photo(file_name, self.current_selected_pet_id)
 
                 self.db.cursor.execute("UPDATE patients SET photo_path = ? WHERE id = ?", (dest_path, self.current_selected_pet_id))
                 self.db.conn.commit()
@@ -623,13 +625,7 @@ class ClientDetailTab(QWidget):
                 QMessageBox.critical(self, "Erro", f"Não foi possível remover a foto: {e}")
 
     def display_pet_photo(self, path_or_none):
-        if path_or_none and os.path.exists(path_or_none):
-            pixmap = QPixmap(path_or_none)
-            scaled_pixmap = pixmap.scaled(self.lbl_foto_pet.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-            self.lbl_foto_pet.setPixmap(scaled_pixmap)
-        else:
-            self.lbl_foto_pet.clear()
-            self.lbl_foto_pet.setText("Sem foto")
+        show_photo(self.lbl_foto_pet, path_or_none)
 
     def load_client_data(self):
         if not self.db or not self.client_id:
@@ -699,7 +695,7 @@ class ClientDetailTab(QWidget):
                     else:
                         data_formatada = data_atend
 
-                    html_content += f"<b>{data_formatada} — Pet: {pet_name}</b><br>{notes.replace('\n', '<br>')}<br><span style='color: #888; font-size: 10px;'>ID: #{hist_id}</span><br><br>"
+                    html_content += f"{data_formatada} — Pet: {pet_name}<br>{notes.replace('\n', '<br>')}<br><span style='color: #888; font-size: 10px;'>ID: #{hist_id}</span><br><br>"
                 
                 self.txt_historico_cliente.setHtml(html_content.strip())
             else:
@@ -749,9 +745,9 @@ class ClientDetailTab(QWidget):
                 registros_aplicados = {row[0]: (row[1], row[2]) for row in self.db.cursor.fetchall()}
 
                 html_content = f"""
-                    <b style="font-size: 12px; color: #333;">Paciente: {nome_pet} ({tipo_esp})</b>
+                    Paciente: {nome_pet} ({tipo_esp})
                     <table width="100%" cellspacing="0" cellpadding="4" style="font-size: 11px; margin-top: 5px;">
-                        <tr style="font-weight: bold;">
+                        <tr style="font-weight: normal;">
                             <td>Vacina</td>
                             <td>Última Aplicação</td>
                             <td>Próxima Dose (Reforço)</td>
@@ -772,15 +768,15 @@ class ClientDetailTab(QWidget):
                         
                         html_content += f"""
                             <tr>
-                                <td><b>{vac}</b></td>
+                                <td>{vac}</td>
                                 <td>{app_fmt}</td>
-                                <td><span style="color: #ffbf00; font-weight: bold;">{due_fmt}</span></td>
+                                <td><span style="color: #ffbf00; font-weight: normal;">{due_fmt}</span></td>
                             </tr>
                         """
                     else:
                         html_content += f"""
                             <tr>
-                                <td><b>{vac}</b></td>
+                                <td>{vac}</td>
                                 <td colspan="2" style="color: #888; font-style: italic;">Não aplicada / Sem registro</td>
                             </tr>
                         """
@@ -801,7 +797,7 @@ class ClientDetailTab(QWidget):
                 if registros and any(r[2] is not None for r in registros):
                     html_content = """
                         <table width="100%" cellspacing="0" cellpadding="4" style="font-size: 11px;">
-                            <tr style="font-weight: bold;">
+                            <tr style="font-weight: normal;">
                                 <td>Pet (Espécie)</td>
                                 <td>Vacina</td>
                                 <td>Aplicada em</td>
@@ -816,10 +812,10 @@ class ClientDetailTab(QWidget):
 
                         html_content += f"""
                             <tr>
-                                <td><b>{pet_name}</b> ({especie})</td>
+                                <td>{pet_name} ({especie})</td>
                                 <td>{vac_name}</td>
                                 <td>{app_fmt}</td>
-                                <td><span style="color: #ffbf00; font-weight: bold;">{due_fmt}</span></td>
+                                <td><span style="color: #ffbf00; font-weight: normal;">{due_fmt}</span></td>
                             </tr>
                         """
                     html_content += "</table>"

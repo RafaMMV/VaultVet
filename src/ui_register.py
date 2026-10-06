@@ -1,3 +1,6 @@
+from pet_photo import PHOTO_STYLE, show_photo, choose_photo, save_photo
+from PyQt6.QtCore import Qt
+from theme import apply_widget_style
 from datetime import datetime
 from PyQt6.QtWidgets import (
     QWidget, QLineEdit, QComboBox, 
@@ -9,9 +12,12 @@ class RegisterTab(QDialog):  # Mudado de QWidget para QDialog
     def __init__(self, parent=None, db=None):
         super().__init__(parent)
         self.db = db
+        self.photo_path = None
         self.setWindowTitle("Novo Cadastro de Cliente e Pet")
         self.setMinimumSize(700, 500)
         self.init_ui()
+        from theme import compact_controls
+        compact_controls(self)
 
     def init_ui(self):
         main_layout = QHBoxLayout(self)
@@ -75,7 +81,9 @@ class RegisterTab(QDialog):  # Mudado de QWidget para QDialog
 
         # --- Pet ---
         patient_group = QGroupBox("Dados do Paciente (Pet)", self)
-        patient_layout = QFormLayout(patient_group)
+        patient_section = QVBoxLayout(patient_group)
+        patient_layout = QFormLayout()
+        patient_section.addLayout(patient_layout)
 
         self.pet_name_input = QLineEdit()
         self.pet_name_input.editingFinished.connect(self.format_pet_name)
@@ -115,8 +123,34 @@ class RegisterTab(QDialog):  # Mudado de QWidget para QDialog
         patient_layout.addRow("Peso (kg):", self.weight_input)
         patient_layout.addRow("Microchip:", self.microchip_input)
 
+        # Photo preview and controls for the new patient.
+        self.lbl_foto_pet = QLabel("Sem foto")
+        self.lbl_foto_pet.setFixedSize(96, 96)
+        self.lbl_foto_pet.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_foto_pet.setStyleSheet(PHOTO_STYLE)
+        # Full-width container keeps the photo centered across both form columns.
+        photo_container = QWidget()
+        photo_layout = QVBoxLayout(photo_container)
+        photo_layout.setContentsMargins(0, 0, 0, 0)
+        photo_row = QHBoxLayout()
+        photo_row.addStretch()
+        photo_row.addWidget(self.lbl_foto_pet)
+        photo_row.addStretch()
+        photo_layout.addLayout(photo_row)
+        photo_buttons = QHBoxLayout()
+        self.btn_carregar_foto = QPushButton("Carregar")
+        self.btn_remover_foto = QPushButton("Remover")
+        self.btn_carregar_foto.clicked.connect(self.upload_pet_photo)
+        self.btn_remover_foto.clicked.connect(self.remove_pet_photo)
+        photo_buttons.addStretch()
+        photo_buttons.addWidget(self.btn_carregar_foto)
+        photo_buttons.addWidget(self.btn_remover_foto)
+        photo_buttons.addStretch()
+        photo_layout.addLayout(photo_buttons)
+        patient_section.addWidget(photo_container)
+
         self.save_button = QPushButton("Salvar Cadastro")
-        self.save_button.setStyleSheet("font-weight: bold; padding: 8px;")
+        apply_widget_style(self.save_button, "style17")
         # Conecta o botão à função de salvar que faltava
         self.save_button.clicked.connect(self.save_registration)
 
@@ -129,6 +163,16 @@ class RegisterTab(QDialog):  # Mudado de QWidget para QDialog
 
         main_layout.addLayout(left_side)
         main_layout.addLayout(right_side)
+
+    def upload_pet_photo(self):
+        path = choose_photo(self)
+        if path:
+            self.photo_path = path
+            show_photo(self.lbl_foto_pet, path)
+
+    def remove_pet_photo(self):
+        self.photo_path = None
+        show_photo(self.lbl_foto_pet)
 
     def save_registration(self):
         if not self.db:
@@ -204,11 +248,16 @@ class RegisterTab(QDialog):  # Mudado de QWidget para QDialog
                 breed, birth_date, age, weight, microchip
             ))
 
+            pet_id = self.db.cursor.lastrowid
+            if self.photo_path:
+                saved_photo = save_photo(self.photo_path, pet_id)
+                self.db.cursor.execute("UPDATE patients SET photo_path = ? WHERE id = ?", (saved_photo, pet_id))
             self.db.conn.commit()
             QMessageBox.information(self, "Sucesso", "Cadastro de cliente e pet realizado com sucesso!")
             self.accept()  # Fecha a janela de diálogo com sucesso
 
         except Exception as e:
+            self.db.conn.rollback()
             QMessageBox.critical(self, "Erro", f"Não foi possível salvar o cadastro:\n{e}")
 
     def format_cpf(self, text):

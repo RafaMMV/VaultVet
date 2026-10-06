@@ -1,3 +1,4 @@
+from theme import apply_widget_style
 from datetime import datetime
 from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QCalendarWidget, 
@@ -23,15 +24,16 @@ class AgendaItemWidget(QWidget):
         else:
             nome_limpo = client
 
-        texto_formatado = f"<b>{hora}</b> — {nome_limpo} - {pet} ({service})"
+        texto_formatado = f"{hora} — {nome_limpo} - {pet} ({service})"
         self.lbl_info = QLabel(texto_formatado)
+        self.lbl_info.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         layout.addWidget(self.lbl_info)
 
         layout.addStretch()
 
         self.btn_menu = QPushButton("⋮")
         self.btn_menu.setFixedSize(30, 25)
-        self.btn_menu.setStyleSheet("font-weight: bold; font-size: 14px;")
+        apply_widget_style(self.btn_menu, "style1")
         
         self.menu = QMenu(self)
         acao_editar = QAction("Editar", self)
@@ -43,6 +45,13 @@ class AgendaItemWidget(QWidget):
         self.menu.addAction(acao_excluir)
         self.btn_menu.setMenu(self.menu)
         layout.addWidget(self.btn_menu)
+
+    def mouseDoubleClickEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and hasattr(self.parent_agenda, "abrir_cliente_agendamento"):
+            self.parent_agenda.abrir_cliente_agendamento(self.reg_id)
+            event.accept()
+            return
+        super().mouseDoubleClickEvent(event)
 
     def chamar_edicao(self):
         self.parent_agenda.preparar_edicao(self.reg_id)
@@ -95,6 +104,8 @@ class AgendaTab(QWidget):
         self.db = db
         self.editando_id = None
         self.init_ui()
+        from theme import compact_controls
+        compact_controls(self)
 
     def init_ui(self):
         main_layout = QHBoxLayout(self)
@@ -106,7 +117,7 @@ class AgendaTab(QWidget):
         self.calendar.clicked.connect(self.carregar_horarios_do_dia)
         self.calendar.currentPageChanged.connect(self.on_current_page_changed)
         
-        left_layout.addWidget(QLabel("<b>Selecione o Dia:</b>"))
+        left_layout.addWidget(QLabel("Selecione o Dia:"))
         left_layout.addWidget(self.calendar)
 
         # Bloco de Agendamentos do Mês (Abaixo do Calendário)
@@ -127,7 +138,7 @@ class AgendaTab(QWidget):
         right_layout = QVBoxLayout()
         
         self.lbl_data_selecionada = QLabel("Agenda do dia: ")
-        self.lbl_data_selecionada.setStyleSheet("font-size: 14px; font-weight: bold;")
+        apply_widget_style(self.lbl_data_selecionada, "style2")
         right_layout.addWidget(self.lbl_data_selecionada)
 
         self.lista_horarios = QListWidget()
@@ -178,7 +189,7 @@ class AgendaTab(QWidget):
         # Botão de Salvar/Adicionar
         self.btn_salvar = QPushButton("Adicionar Horário")
         self.btn_salvar.clicked.connect(self.salvar_horario)
-        self.btn_salvar.setStyleSheet("font-weight: bold; padding: 6px;")
+        apply_widget_style(self.btn_salvar, "style3")
         right_layout.addWidget(self.btn_salvar)
 
         main_layout.addLayout(right_layout, stretch=1)
@@ -204,7 +215,7 @@ class AgendaTab(QWidget):
         try:
             formato_amarelo = QTextCharFormat()
             formato_amarelo.setForeground(QColor("#ffbf00"))   # Garante que o texto fica preto
-            formato_amarelo.setFontWeight(QFont.Weight.Bold) # Coloca o número a negrito
+            formato_amarelo.setFontWeight(QFont.Weight.Normal) # Mantém o peso normal
 
             primeiro_dia = QDate(year, month, 1)
             ultimo_dia = QDate(year, month, primeiro_dia.daysInMonth())
@@ -289,7 +300,7 @@ class AgendaTab(QWidget):
                     item_header = QListWidgetItem(header_text)
                     item_header.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                     font = item_header.font()
-                    font.setBold(True)
+                    font.setBold(False)
                     item_header.setFont(font)
                     item_header.setForeground(QColor("#a0a0a0"))
                     item_header.setFlags(Qt.ItemFlag.NoItemFlags) # Apenas informativo

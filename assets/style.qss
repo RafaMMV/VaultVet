@@ -1,0 +1,60 @@
+/* VaultVet: estilos originais centralizados.
+   Layout e comportamento permanecem nos arquivos Python.
+   vaultStyle identifica os componentes que recebem cada regra. */
+
+/* ui_agenda.py: self.btn_menu */
+QWidget[vaultStyle="style1"] { font-weight: normal; font-size: 13px; }
+
+/* ui_agenda.py: self.lbl_data_selecionada; ui_main.py: self.lbl_titulo */
+QWidget[vaultStyle="style2"] { font-size: 15px; font-weight: normal; }
+
+/* ui_agenda.py: self.btn_salvar; ui_client_detail.py: self.save_pet_button; ui_client_list.py: self.btn_novo_cadastro */
+QWidget[vaultStyle="style3"] { font-weight: normal; padding: 3px; }
+
+/* ui_cash_flow.py: self.title_label; ui_client_detail.py: self.title_label */
+QWidget[vaultStyle="style4"] { font-size: 15px; font-weight: normal; }
+
+/* ui_cash_flow.py: self.resumo_group; ui_cash_flow.py: extrato_group; ui_client_detail.py: tutor_group; ui_client_detail.py: self.group_historico_cliente; ui_client_detail.py: self.group_pagamentos_cliente; ui_client_detail.py: self.group_exames; ui_client_detail.py: self.group_vacinas_cliente; ui_client_detail.py: pets_group; ui_client_detail.py: self.patient_group; ui_main.py: self.group_detalhes; ui_main.py: self.group_historico; ui_main.py: self.group_lembretes; ui_main.py: self.group_atendimento; ui_main.py: self.group_vacinas; ui_main.py: self.group_outros; ui_main.py: self.group_pagamento */
+QGroupBox[vaultStyle="style5"] { font-weight: normal; font-size: 15px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px; padding-top: 6px; }
+
+/* ui_cash_flow.py: self.lbl_fat_mes; ui_cash_flow.py: self.lbl_total_recebido */
+QWidget[vaultStyle="style6"] { font-size: 13px; font-weight: normal; }
+
+/* ui_cash_flow.py: self.lbl_total_pendente */
+QWidget[vaultStyle="style7"] { font-size: 13px; font-weight: normal; color: #ffbf00; }
+
+/* ui_client_detail.py: self.delete_client_button; ui_client_detail.py: self.btn_excluir_hist_cli; ui_client_detail.py: self.btn_excluir_pag_cli; ui_client_detail.py: self.btn_remover_exame; ui_client_detail.py: self.remove_pet_button; ui_client_detail.py: self.btn_remover_foto */
+QWidget[vaultStyle="style8"] { color: #c53030; font-weight: normal; }
+
+/* ui_client_detail.py: self.lbl_total_pendente */
+QWidget[vaultStyle="style9"] { color: #ffbf00; font-weight: normal; font-size: 13px; }
+
+/* ui_client_detail.py: self.btn_anexar_exame; ui_client_detail.py: self.btn_carregar_foto */
+QWidget[vaultStyle="style10"] { font-size: 12px; padding: 3px; }
+
+/* ui_client_detail.py: self.lbl_foto_pet */
+QWidget[vaultStyle="style11"] { border: 1px dashed #aaa; background-color: #f9f9f9; color: #666; border-radius: 4px; }
+
+/* ui_main.py: self.lbl_mensagem_alerta */
+QWidget[vaultStyle="style12"] { padding: 0px; font-weight: normal; font-size: 12px; }
+
+/* ui_main.py: self.lbl_bolinha_1 */
+QWidget[vaultStyle="style13"] { color: #ffffff; font-size: 12px; }
+
+/* ui_main.py: self.lbl_bolinha_2 */
+QWidget[vaultStyle="style14"] { color: #ccc; font-size: 12px; }
+
+/* ui_main.py: self.chk_pag_cred_parc; ui_main.py: self.chk_pag_pendente; ui_main.py: lbl; ui_main.py: chk; ui_main.py: field; ui_main.py: c */
+QWidget[vaultStyle="style15"] { font-weight: normal; font-size: 12px; }
+
+/* ui_main.py: self.btn_salvar_atendimento */
+QWidget[vaultStyle="style16"] { font-weight: normal; padding: 3px; font-size: 13px; }
+
+/* ui_register.py: self.save_button */
+QWidget[vaultStyle="style17"] { font-weight: normal; padding: 3px; }
+
+/* Base geral: texto menor e peso normal; sem alterar cores ou posições. */
+QWidget[vaultStyle="base"] { font-size: 12px; font-weight: normal; }
+
+/* Título da tela de estoque. */
+QWidget[vaultStyle="inventoryTitle"] { font-size: 15px; font-weight: normal; }

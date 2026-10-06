@@ -1,5 +1,15 @@
 import os
 import sqlite3
+from datetime import datetime, timedelta
+import re
+import math
+import calendar
+
+VACCINES = {
+    'V8': 'V8', 'V10': 'V10', 'V4': 'V4 (Gatos)', 'V5': 'V5 (Gatos)',
+    'Antirrábica': 'Antirrábica (Raiva)', 'Giárdia': 'Giárdia',
+    'Gripe Canina': 'Gripe Canina', 'FeLV': 'FeLV (Gatos)',
+}
 
 class Database:
     def __init__(self, db_name="vaultvet.db"):
@@ -11,6 +21,7 @@ class Database:
         self.cursor = None
         self.connect()
         self.create_tables()
+        self.initialize_inventory()
 
     def connect(self):
         """Connect to the SQLite database and enable foreign keys."""
@@ -381,6 +392,161 @@ class Database:
         except sqlite3.Error as e:
             print(f"Erro ao apagar histórico: {e}")
             self.conn.rollback()
+
+    def initialize_inventory(self):
+        schema = self.conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='inventory_vaccines'").fetchone()
+        definition = """(code TEXT PRIMARY KEY, name TEXT NOT NULL,
+            quantity INTEGER NOT NULL DEFAULT 0, expiry_date TEXT, unit_cost REAL)"""
+        if schema and 'CHECK' in schema[0].upper():
+            # Rebuild the old table to allow negative stock, keeping existing rows.
+            if self.conn.in_transaction:
+                raise RuntimeError('Finalize a transação atual antes de atualizar o estoque.')
+            fk = self.conn.execute('PRAGMA foreign_keys').fetchone()[0]
+            columns = {row[1] for row in self.conn.execute('PRAGMA table_info(inventory_vaccines)')}
+            self.conn.execute('PRAGMA foreign_keys=OFF')
+            try:
+                with self.conn:
+                    self.conn.execute('CREATE TABLE inventory_vaccines_update ' + definition)
+                    expiry = 'expiry_date' if 'expiry_date' in columns else 'NULL'
+                    cost = 'unit_cost' if 'unit_cost' in columns else 'NULL'
+                    self.conn.execute('INSERT INTO inventory_vaccines_update SELECT code,name,quantity,' + expiry + ',' + cost + ' FROM inventory_vaccines')
+                    self.conn.execute('DROP TABLE inventory_vaccines')
+                    self.conn.execute('ALTER TABLE inventory_vaccines_update RENAME TO inventory_vaccines')
+            finally:
+                self.conn.execute('PRAGMA foreign_keys=' + str(fk))
+        with self.conn:
+            self.conn.execute('CREATE TABLE IF NOT EXISTS inventory_vaccines ' + definition)
+            columns = {row[1] for row in self.conn.execute('PRAGMA table_info(inventory_vaccines)')}
+            for name, kind in [('expiry_date','TEXT'),('unit_cost','REAL')]:
+                if name not in columns:
+                    self.conn.execute('ALTER TABLE inventory_vaccines ADD COLUMN ' + name + ' ' + kind)
+            self.conn.execute('''CREATE TABLE IF NOT EXISTS consultation_vaccine_stock (
+                consultation_id INTEGER NOT NULL REFERENCES consultation_history(id) ON DELETE CASCADE,
+                code TEXT NOT NULL REFERENCES inventory_vaccines(code),
+                vaccine_record_id INTEGER REFERENCES pet_vaccines(id) ON DELETE SET NULL,
+                consumed INTEGER NOT NULL CHECK(consumed IN (0,1)),
+                PRIMARY KEY(consultation_id, code))''')
+            for code, name in VACCINES.items():
+                self.conn.execute('INSERT OR IGNORE INTO inventory_vaccines(code,name) VALUES (?,?)', (code,name))
+
+    def list_stock(self):
+        return [(c,n,q) for c,n,q,e,p in self.list_stock_details()]
+
+    def list_stock_details(self):
+        rows = self.conn.execute('SELECT code,name,quantity,expiry_date,unit_cost FROM inventory_vaccines').fetchall()
+        by_code = {row[0]:row for row in rows}
+        return [by_code[code] for code in VACCINES]
+
+    def set_stock(self, quantities):
+        previous = {c:(e,p) for c,n,q,e,p in self.list_stock_details()}
+        self.set_stock_details({c:(q,*previous[c]) for c,q in quantities.items()})
+
+    def set_stock_details(self, details):
+        if set(details) != set(VACCINES):
+            raise ValueError('Informe as quantidades das oito vacinas.')
+        for code,(quantity,expiry,cost) in details.items():
+            if type(quantity) is not int or not -2147483647 <= quantity <= 2147483647:
+                raise ValueError(code + ': informe uma quantidade inteira válida.')
+            if expiry:
+                datetime.strptime(expiry, '%Y-%m-%d')
+            if cost is not None and (not math.isfinite(cost) or cost < 0):
+                raise ValueError(code + ': o custo deve ser positivo ou ficar em branco.')
+        with self.conn:
+            self.conn.executemany('UPDATE inventory_vaccines SET quantity=?,expiry_date=?,unit_cost=? WHERE code=?',
+                [(q,e,None if p is None else round(p,2),c) for c,(q,e,p) in details.items()])
+
+    def vaccine_expiry_alerts(self, today=None):
+        today = today or datetime.now().date()
+        alerts = []
+        for code,name,quantity,expiry,cost in self.list_stock_details():
+            if not expiry:
+                continue
+            due = datetime.strptime(expiry, '%Y-%m-%d').date()
+            month_number = due.year * 12 + due.month - 1 - 2
+            year, month_zero = divmod(month_number, 12)
+            month = month_zero + 1
+            start = due.replace(year=year,month=month,
+                day=min(due.day,calendar.monthrange(year,month)[1]))
+            if start <= today <= due:
+                alerts.append(name + ' — vencimento: ' + due.strftime('%d/%m/%Y'))
+        return alerts
+
+    def consultation_vaccines(self, consultation_id):
+        return [r[0] for r in self.conn.execute(
+            'SELECT code FROM consultation_vaccine_stock WHERE consultation_id=?', (consultation_id,))]
+
+    def _adopt_old_vaccines(self, consultation_id, pet_id, day, notes):
+        # Existing records predate stock tracking: never deduct past doses retroactively.
+        lines = re.findall(r'• Vacinas Aplicadas: ([^\n]+)', notes or '')
+        for code in set(c.strip() for line in lines for c in line.split(',')) & set(VACCINES):
+            record = self.conn.execute('''SELECT id FROM pet_vaccines WHERE pet_id=?
+                AND vaccine_name=? AND application_date=? ORDER BY id LIMIT 1''', (pet_id,code,day)).fetchone()
+            self.conn.execute('''INSERT OR IGNORE INTO consultation_vaccine_stock
+                (consultation_id,code,vaccine_record_id,consumed) VALUES (?,?,?,0)''',
+                (consultation_id,code,record[0] if record else None))
+
+    def save_consultation_with_stock(self, consultation_id, pet_id, client_id, day, notes, vaccines, payments):
+        selected = set(vaccines)
+        if not selected <= set(VACCINES):
+            raise ValueError('Vacina desconhecida.')
+        with self.conn:
+            if consultation_id:
+                old = self.conn.execute('SELECT pet_id,client_id,date,notes FROM consultation_history WHERE id=?',
+                                        (consultation_id,)).fetchone()
+                if not old or old[:3] != (pet_id,client_id,day):
+                    raise ValueError('Atendimento não encontrado para este paciente e data.')
+                self._adopt_old_vaccines(consultation_id,pet_id,day,old[3])
+            else:
+                # The current UI uses one attendance per patient/date. Guard repeated saves.
+                old = self.conn.execute('SELECT id,notes FROM consultation_history WHERE pet_id=? AND date=?',
+                                        (pet_id,day)).fetchone()
+                if old:
+                    consultation_id = old[0]
+                    self._adopt_old_vaccines(consultation_id,pet_id,day,old[1])
+                else:
+                    consultation_id = self.conn.execute('''INSERT INTO consultation_history
+                        (pet_id,client_id,date,notes) VALUES (?,?,?,?)''', (pet_id,client_id,day,notes)).lastrowid
+            previous = {code:(record,consumed) for code,record,consumed in self.conn.execute(
+                'SELECT code,vaccine_record_id,consumed FROM consultation_vaccine_stock WHERE consultation_id=?',
+                (consultation_id,))}
+            for code in previous.keys() - selected:
+                record,consumed = previous[code]
+                if consumed:
+                    self.conn.execute('UPDATE inventory_vaccines SET quantity=quantity+1 WHERE code=?', (code,))
+                if record:
+                    self.conn.execute('DELETE FROM pet_vaccines WHERE id=?', (record,))
+                self.conn.execute('DELETE FROM consultation_vaccine_stock WHERE consultation_id=? AND code=?',
+                                  (consultation_id,code))
+            for code in selected - previous.keys():
+                changed = self.conn.execute('''UPDATE inventory_vaccines SET quantity=quantity-1
+                    WHERE code=?''', (code,)).rowcount
+                if not changed:
+                    raise ValueError(f'Vacina não cadastrada: {VACCINES[code]}.')
+                birth = self.conn.execute('SELECT birth_date FROM patients WHERE id=?',(pet_id,)).fetchone()
+                puppy = False
+                if birth and birth[0]:
+                    try: puppy = 0 <= (datetime.now()-datetime.strptime(birth[0],'%d/%m/%Y')).days < 365
+                    except ValueError: pass
+                count = self.conn.execute('SELECT COUNT(*) FROM pet_vaccines WHERE pet_id=? AND vaccine_name=?',
+                                          (pet_id,code)).fetchone()[0]
+                applied = datetime.strptime(day,'%Y-%m-%d')
+                if code != 'Antirrábica' and puppy and count < 2:
+                    due = applied + timedelta(days=21)
+                else:
+                    try: due = applied.replace(year=applied.year+1)
+                    except ValueError: due = applied.replace(year=applied.year+1,day=28)
+                record = self.conn.execute('''INSERT INTO pet_vaccines
+                    (pet_id,vaccine_name,application_date,next_due_date) VALUES (?,?,?,?)''',
+                    (pet_id,code,day,due.strftime('%Y-%m-%d'))).lastrowid
+                self.conn.execute('''INSERT INTO consultation_vaccine_stock
+                    (consultation_id,code,vaccine_record_id,consumed) VALUES (?,?,?,1)''',
+                    (consultation_id,code,record))
+            self.conn.execute('UPDATE consultation_history SET notes=? WHERE id=?', (notes,consultation_id))
+            self.conn.execute('DELETE FROM consultation_payments WHERE consultation_id=?',(consultation_id,))
+            self.conn.executemany('''INSERT INTO consultation_payments
+                (consultation_id,payment_method,amount,installments,status) VALUES (?,?,?,?,?)''',
+                [(consultation_id,*p) for p in payments])
+        return consultation_id
 
     def close(self):
         """Close the database connection."""

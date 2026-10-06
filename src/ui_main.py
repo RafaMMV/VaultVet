@@ -1,15 +1,28 @@
+from pet_photo import PHOTO_STYLE, show_photo, PatientPhotoArea
+import re
+from ui_inventory import InventoryUI
+from theme import apply_widget_style
 from datetime import datetime
 from PyQt6.QtWidgets import (
     QMainWindow, QTabBar, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QMessageBox, QListWidget, QListWidgetItem, QPushButton, QDateEdit, 
     QGroupBox, QFormLayout, QTextEdit, QTextBrowser, QLineEdit, QCheckBox, QGridLayout,
-    QDialog, QDialogButtonBox, QInputDialog
+    QDialog, QDialogButtonBox, QInputDialog, QSizePolicy
 )
-from PyQt6.QtCore import QDate, Qt
-from PyQt6.QtGui import QIcon, QTextCharFormat, QColor
+from PyQt6.QtCore import QDate, Qt, QTimer, QEvent, pyqtSignal
+from PyQt6.QtGui import QIcon, QTextCharFormat, QColor, QPixmap
 from ui_client_list import ClientListUI
 from ui_agenda import AgendaTab, AgendaItemWidget
 from ui_cash_flow import CashFlowTab
+
+class AlertDot(QLabel):
+    clicked = pyqtSignal()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit()
+        super().mousePressEvent(event)
+
 
 class MoedaLineEdit(QLineEdit):
     """Campo de texto personalizado que formata automaticamente o valor para o padrão monetário (ex: 1.000,00)."""
@@ -48,12 +61,14 @@ class DialogoDivisaoPagamento(QDialog):
         self.pagamentos_resultado = []
         self.dados_anteriores = dados_anteriores or []
         self.init_ui()
+        from theme import compact_controls
+        compact_controls(self)
 
     def init_ui(self):
         layout = QVBoxLayout(self)
 
         val_sug_str = f"{self.valor_total:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if self.valor_total > 0 else "0,00"
-        self.lbl_info = QLabel(f"<b>Valor Total da Consulta: R$ {val_sug_str}</b>")
+        self.lbl_info = QLabel(f"Valor Total da Consulta: R$ {val_sug_str}")
         layout.addWidget(self.lbl_info)
 
         grid_pag = QGridLayout()
@@ -86,7 +101,7 @@ class DialogoDivisaoPagamento(QDialog):
         self.txt_parcelas.setPlaceholderText("Qtd. vezes")
         grid_pag.addWidget(self.txt_parcelas, 5, 3)
 
-        grid_pag.addWidget(QLabel("<b>Valor Pendente: R$</b>"), 6, 0)
+        grid_pag.addWidget(QLabel("Valor Pendente: R$"), 6, 0)
         self.txt_pendente = MoedaLineEdit()
         grid_pag.addWidget(self.txt_pendente, 6, 1)
 
@@ -212,10 +227,14 @@ class AgendaTableWidget(QWidget):
         left_layout = QVBoxLayout()
         
         self.group_detalhes = QGroupBox("Informações do Paciente")
-        self.group_detalhes.setStyleSheet("QGroupBox { font-weight: bold; font-size: 13px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px; padding-top: 8px; }")
+        apply_widget_style(self.group_detalhes, "style5")
         
-        form_detalhes = QFormLayout(self.group_detalhes)
+        self.group_detalhes.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        details_layout = QVBoxLayout(self.group_detalhes)
+        form_detalhes = QFormLayout()
+        details_layout.addLayout(form_detalhes)
         form_detalhes.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        form_detalhes.setFormAlignment(Qt.AlignmentFlag.AlignTop)
         
         self.lbl_det_cliente = QLabel("-")
         self.lbl_det_pet = QLabel("-")
@@ -225,23 +244,35 @@ class AgendaTableWidget(QWidget):
         self.lbl_det_peso = QLabel("-")
 
         for lbl in [self.lbl_det_cliente, self.lbl_det_pet, self.lbl_det_raca, self.lbl_det_nascimento, self.lbl_det_idade, self.lbl_det_peso]:
-            lbl.setStyleSheet("font-weight: normal; font-size: 12px;")
+            apply_widget_style(lbl, "style15")
 
-        form_detalhes.addRow("<b>Cliente:</b>", self.lbl_det_cliente)
-        form_detalhes.addRow("<b>Pet:</b>", self.lbl_det_pet)
-        form_detalhes.addRow("<b>Raça:</b>", self.lbl_det_raca)
-        form_detalhes.addRow("<b>Nascimento:</b>", self.lbl_det_nascimento)
-        form_detalhes.addRow("<b>Idade:</b>", self.lbl_det_idade)
-        form_detalhes.addRow("<b>Peso:</b>", self.lbl_det_peso)
+        form_detalhes.addRow("Cliente:", self.lbl_det_cliente)
+        form_detalhes.addRow("Pet:", self.lbl_det_pet)
+        form_detalhes.addRow("Raça:", self.lbl_det_raca)
+        form_detalhes.addRow("Nascimento:", self.lbl_det_nascimento)
+        form_detalhes.addRow("Idade:", self.lbl_det_idade)
+        form_detalhes.addRow("Peso:", self.lbl_det_peso)
 
+        self.lbl_det_foto = QLabel("Sem foto")
+        self.lbl_det_foto.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_det_foto.setFixedSize(96, 96)
+        self.lbl_det_foto.setStyleSheet(PHOTO_STYLE)
+        self.lbl_det_foto.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        # Reserve only the photo height below Weight.
+        self.patient_photo_area = PatientPhotoArea(self.lbl_det_foto, self.group_detalhes)
+        self.patient_photo_area.setObjectName("patientPhotoArea")
+        details_layout.addWidget(self.patient_photo_area)
         left_layout.addWidget(self.group_detalhes)
 
         # Histórico Recente do Paciente
         self.group_historico = QGroupBox("Histórico Recente (Últimas Consultas)")
-        self.group_historico.setStyleSheet("QGroupBox { font-weight: bold; font-size: 13px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px; padding-top: 8px; }")
+        apply_widget_style(self.group_historico, "style5")
         
         historico_layout = QVBoxLayout(self.group_historico)
+        self.group_historico.setMinimumHeight(60)
         self.txt_historico = QTextBrowser()
+        self.txt_historico.setMinimumHeight(30)
+        self.txt_historico.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Ignored)
         self.txt_historico.setPlaceholderText("Nenhum histórico de atendimento registrado para este paciente.")
         historico_layout.addWidget(self.txt_historico)
 
@@ -249,30 +280,24 @@ class AgendaTableWidget(QWidget):
 
         # Bloco de Lembretes e Alertas
         self.group_lembretes = QGroupBox("Lembretes e Alertas")
-        self.group_lembretes.setStyleSheet("QGroupBox { font-weight: bold; font-size: 13px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px; padding-top: 8px; }")
-        self.group_lembretes.setMinimumHeight(150)
+        apply_widget_style(self.group_lembretes, "style5")
+        self.group_lembretes.setFixedHeight(85)
+        self.group_lembretes.setStyleSheet(self.group_lembretes.styleSheet() + " QGroupBox { padding-top: 0px; margin-top: 0px; }")
         
         lembrete_layout = QVBoxLayout(self.group_lembretes)
         
-        self.lbl_mensagem_alerta = QLabel("Nenhum alerta pendente para hoje.")
-        self.lbl_mensagem_alerta.setWordWrap(True)
+        self.lbl_mensagem_alerta = QTextBrowser()
+        self.lbl_mensagem_alerta.setMinimumHeight(0)
         self.lbl_mensagem_alerta.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.lbl_mensagem_alerta.setStyleSheet("padding: 6px; font-weight: normal; font-size: 12px;")
+        apply_widget_style(self.lbl_mensagem_alerta, "style12")
         lembrete_layout.addWidget(self.lbl_mensagem_alerta)
 
-        carrossel_control_layout = QHBoxLayout()
-        carrossel_control_layout.addStretch()
-        
-        self.lbl_bolinha_1 = QLabel("●")
-        self.lbl_bolinha_1.setStyleSheet("color: #333; font-size: 11px;")
-        self.lbl_bolinha_2 = QLabel("○")
-        self.lbl_bolinha_2.setStyleSheet("color: #ccc; font-size: 11px;")
-        
-        carrossel_control_layout.addWidget(self.lbl_bolinha_1)
-        carrossel_control_layout.addWidget(self.lbl_bolinha_2)
-        carrossel_control_layout.addStretch()
-        
-        lembrete_layout.addLayout(carrossel_control_layout)
+        self.carrossel_control_layout = QHBoxLayout()
+        self.alert_messages = []
+        self.alert_index = 0
+        self.alert_dots = []
+        self.group_lembretes.installEventFilter(self)
+        lembrete_layout.addLayout(self.carrossel_control_layout)
         left_layout.addWidget(self.group_lembretes)
 
         main_layout.addLayout(left_layout, stretch=2)
@@ -282,7 +307,7 @@ class AgendaTableWidget(QWidget):
         
         # 1. Caixa de Resumo do Atendimento do Dia
         self.group_atendimento = QGroupBox("Resumo do Atendimento do Dia")
-        self.group_atendimento.setStyleSheet("QGroupBox { font-weight: bold; font-size: 13px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px; padding-top: 8px; }")
+        apply_widget_style(self.group_atendimento, "style5")
         
         atendimento_layout = QVBoxLayout(self.group_atendimento)
         self.txt_atendimento = QTextEdit()
@@ -293,7 +318,7 @@ class AgendaTableWidget(QWidget):
 
         # 2. Caixa de Vacinas por Checkboxes Separadas (Cães e Gatos)
         self.group_vacinas = QGroupBox("Vacinas Aplicadas (Marque as aplicadas)")
-        self.group_vacinas.setStyleSheet("QGroupBox { font-weight: bold; font-size: 13px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px; padding-top: 8px; }")
+        apply_widget_style(self.group_vacinas, "style5")
         
         vacinas_grid = QGridLayout(self.group_vacinas)
         
@@ -307,7 +332,7 @@ class AgendaTableWidget(QWidget):
         self.chk_feLV = QCheckBox("FeLV (Gatos)")
 
         for chk in [self.chk_v8, self.chk_v10, self.chk_v4, self.chk_v5, self.chk_raiva, self.chk_giardia, self.chk_gripe, self.chk_feLV]:
-            chk.setStyleSheet("font-weight: normal; font-size: 12px;")
+            apply_widget_style(chk, "style15")
 
         vacinas_grid.addWidget(self.chk_v8, 0, 0)
         vacinas_grid.addWidget(self.chk_v10, 0, 1)
@@ -322,7 +347,7 @@ class AgendaTableWidget(QWidget):
 
         # 3. Caixa Separada para Vermífugo e Antipulgas (Campos de Texto)
         self.group_outros = QGroupBox("Outros Preventivos (Opcional)")
-        self.group_outros.setStyleSheet("QGroupBox { font-weight: bold; font-size: 13px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px; padding-top: 8px; }")
+        apply_widget_style(self.group_outros, "style5")
         
         outros_form = QFormLayout(self.group_outros)
         outros_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
@@ -334,16 +359,16 @@ class AgendaTableWidget(QWidget):
         self.txt_antipulgas_opc.setPlaceholderText("Ex: NexGard, Bravecto...")
 
         for field in [self.txt_vermifugo_opc, self.txt_antipulgas_opc]:
-            field.setStyleSheet("font-weight: normal; font-size: 12px;")
+            apply_widget_style(field, "style15")
 
-        outros_form.addRow("<b>Vermífugo:</b>", self.txt_vermifugo_opc)
-        outros_form.addRow("<b>Antipulgas:</b>", self.txt_antipulgas_opc)
+        outros_form.addRow("Vermífugo:", self.txt_vermifugo_opc)
+        outros_form.addRow("Antipulgas:", self.txt_antipulgas_opc)
 
         center_layout.addWidget(self.group_outros)
 
         # 4. Bloco de Pagamento Rápido na Base da Coluna Central
         self.group_pagamento = QGroupBox("Forma de Pagamento")
-        self.group_pagamento.setStyleSheet("QGroupBox { font-weight: bold; font-size: 13px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px; padding-top: 8px; }")
+        apply_widget_style(self.group_pagamento, "style5")
         
         pag_layout = QVBoxLayout(self.group_pagamento)
         
@@ -362,7 +387,7 @@ class AgendaTableWidget(QWidget):
         self.chk_pag_pendente = QCheckBox("Valor Pendente")
         
         for c in [self.chk_pag_pix, self.chk_pag_dinheiro, self.chk_pag_transf, self.chk_pag_debito, self.chk_pag_credito]:
-            c.setStyleSheet("font-weight: normal; font-size: 12px;")
+            apply_widget_style(c, "style15")
             pag_layout.addWidget(c)
         
         cred_parc_layout = QHBoxLayout()
@@ -373,10 +398,10 @@ class AgendaTableWidget(QWidget):
         cred_parc_layout.addWidget(self.txt_parcelas)
         cred_parc_layout.addStretch()
 
-        self.chk_pag_cred_parc.setStyleSheet("font-weight: normal; font-size: 12px;")
+        apply_widget_style(self.chk_pag_cred_parc, "style15")
         pag_layout.addLayout(cred_parc_layout)
 
-        self.chk_pag_pendente.setStyleSheet("font-weight: normal; font-size: 12px;")
+        apply_widget_style(self.chk_pag_pendente, "style15")
         pag_layout.addWidget(self.chk_pag_pendente)
 
         self.btn_dividir_pagamento = QPushButton("Dividir Pagamento")
@@ -387,7 +412,7 @@ class AgendaTableWidget(QWidget):
 
         # Botão unificado de salvar no centro exato
         self.btn_salvar_atendimento = QPushButton("Salvar Atendimento")
-        self.btn_salvar_atendimento.setStyleSheet("font-weight: bold; padding: 8px; font-size: 14px;")
+        apply_widget_style(self.btn_salvar_atendimento, "style16")
         self.btn_salvar_atendimento.clicked.connect(self.salvar_ou_atualizar_atendimento)
         center_layout.addWidget(self.btn_salvar_atendimento)
 
@@ -396,8 +421,8 @@ class AgendaTableWidget(QWidget):
         # ================= COLUNA 3 (DIREITA): LISTA DE HORÁRIOS DO DIA =================
         right_layout = QVBoxLayout()
         
-        self.lbl_titulo = QLabel("<b>Agendamentos</b>")
-        self.lbl_titulo.setStyleSheet("font-size: 14px; font-weight: bold;")
+        self.lbl_titulo = QLabel("Agendamentos")
+        apply_widget_style(self.lbl_titulo, "style2")
         right_layout.addWidget(self.lbl_titulo)
         
         date_control_layout = QHBoxLayout()
@@ -429,11 +454,81 @@ class AgendaTableWidget(QWidget):
 
         self.lista_horarios = QListWidget()
         self.lista_horarios.itemClicked.connect(self.ao_clicar_horario)
+        self.lista_horarios.itemDoubleClicked.connect(
+            lambda item: self.abrir_cliente_agendamento(item.data(Qt.ItemDataRole.UserRole)))
         self.lista_horarios.currentItemChanged.connect(lambda current, previous: self.ao_clicar_horario(current))
         right_layout.addWidget(self.lista_horarios)
 
         main_layout.addLayout(right_layout, stretch=2)
+        lembrete_layout.setContentsMargins(4, 15, 4, 0)
+        lembrete_layout.setSpacing(0)
+        self.carrossel_control_layout.setContentsMargins(0, 0, 0, 0)
+        self.carrossel_control_layout.setSpacing(5)
         self.carregar_horarios()
+        self.carousel_timer = QTimer(self)
+        self.carousel_timer.setInterval(5_000)
+        self.carousel_timer.timeout.connect(self.next_alert)
+        self.expiry_timer = QTimer(self)
+        self.expiry_timer.timeout.connect(self.refresh_inventory_alerts)
+        self.expiry_timer.start(60_000)
+        self.refresh_inventory_alerts()
+
+    def refresh_inventory_alerts(self):
+        alerts = self.db.vaccine_expiry_alerts() if self.db else []
+        messages = alerts or ["Nenhum alerta pendente para hoje."]
+        if messages == self.alert_messages:
+            return
+        previous = self.alert_messages[self.alert_index] if self.alert_messages else None
+        self.alert_messages = messages
+        self.alert_index = messages.index(previous) if previous in messages else 0
+        while self.carrossel_control_layout.count():
+            item = self.carrossel_control_layout.takeAt(0)
+            if item.widget():
+                item.widget().hide()
+                item.widget().deleteLater()
+        self.alert_dots = []
+        self.carrossel_control_layout.addStretch()
+        for index in range(len(messages)):
+            dot = AlertDot()
+            dot.setFixedHeight(13)
+            dot.setCursor(Qt.CursorShape.PointingHandCursor)
+            dot.setToolTip(f"Mensagem {index + 1} de {len(messages)}")
+            dot.clicked.connect(lambda i=index: self.select_alert(i))
+            self.alert_dots.append(dot)
+            self.carrossel_control_layout.addWidget(dot)
+        self.carrossel_control_layout.addStretch()
+        self.show_alert()
+        self.restart_carousel()
+
+    def show_alert(self):
+        self.lbl_mensagem_alerta.setPlainText(self.alert_messages[self.alert_index])
+        for index, dot in enumerate(self.alert_dots):
+            active = index == self.alert_index
+            dot.setText("●" if active else "○")
+            apply_widget_style(dot, "style13" if active else "style14")
+
+    def select_alert(self, index):
+        self.alert_index = index
+        self.show_alert()
+        self.restart_carousel()
+
+    def next_alert(self):
+        if len(self.alert_messages) > 1:
+            self.alert_index = (self.alert_index + 1) % len(self.alert_messages)
+            self.show_alert()
+
+    def restart_carousel(self):
+        self.carousel_timer.stop()
+        if len(self.alert_messages) > 1 and not self.group_lembretes.underMouse():
+            self.carousel_timer.start()
+
+    def eventFilter(self, watched, event):
+        if watched is getattr(self, "group_lembretes", None) and hasattr(self, "carousel_timer"):
+            if event.type() == QEvent.Type.Enter:
+                self.carousel_timer.stop()
+            elif event.type() == QEvent.Type.Leave:
+                self.restart_carousel()
+        return super().eventFilter(watched, event)
 
     def destravar_pagamentos_se_necessario(self):
         """Se o usuário apagar ou zerar o valor principal, limpa a divisão e destrava os checkboxes."""
@@ -526,7 +621,7 @@ class AgendaTableWidget(QWidget):
             data_selecionada = self.date_edit.date()
             data_str = data_selecionada.toString("yyyy-MM-dd")
             
-            self.lbl_titulo.setText(f"<b>Agendamentos de {data_selecionada.toString('dd/MM/yyyy')}</b>")
+            self.lbl_titulo.setText(f"Agendamentos de {data_selecionada.toString('dd/MM/yyyy')}")
 
             self.db.cursor.execute(
                 "SELECT id, time, client_name, pet_name, service_type FROM appointments WHERE date = ? ORDER BY time ASC", 
@@ -549,6 +644,42 @@ class AgendaTableWidget(QWidget):
                 
         except Exception as e:
             print(f"Erro ao carregar tabela de horários: {e}")
+
+    def abrir_cliente_agendamento(self, reg_id):
+        """Open the matching client and pet without guessing ambiguous names."""
+        if not self.db or not reg_id:
+            return
+        appt = self.db.conn.execute(
+            "SELECT client_name, pet_name FROM appointments WHERE id = ?", (reg_id,)).fetchone()
+        if not appt:
+            return
+        matches = self.db.conn.execute("""
+            SELECT c.id, p.id, TRIM(c.first_name || ' ' || COALESCE(c.last_name, ''))
+            FROM clients c JOIN patients p ON p.client_id = c.id
+            WHERE TRIM(c.first_name || ' ' || COALESCE(c.last_name, '')) = ? COLLATE NOCASE
+              AND TRIM(p.pet_name) = ? COLLATE NOCASE
+        """, (appt[0].strip(), appt[1].strip())).fetchall()
+        if len(matches) != 1:
+            message = ("Não foi encontrado um cadastro correspondente a este agendamento."
+                       if not matches else "Há mais de um cadastro com esses nomes. Selecione o correto na aba Clientes.")
+            QMessageBox.warning(self, "Cadastro do cliente", message)
+            return
+        client_id, pet_id, client_name = matches[0]
+        main_window = self.window()
+        if not hasattr(main_window, "tabs"):
+            return
+        from ui_client_detail import ClientDetailTab
+        for index in range(main_window.tabs.count()):
+            tab = main_window.tabs.widget(index)
+            if tab.property("appointmentClientId") == client_id and tab.property("appointmentPetId") == pet_id:
+                main_window.tabs.setCurrentWidget(tab)
+                return
+        tab = ClientDetailTab(parent=main_window, db=self.db, client_id=client_id,
+                              main_window=main_window, select_pet_id=pet_id)
+        tab.setProperty("appointmentClientId", client_id)
+        tab.setProperty("appointmentPetId", pet_id)
+        main_window.tabs.addTab(tab, f"Tutor: {client_name}")
+        main_window.tabs.setCurrentWidget(tab)
 
     def ao_clicar_horario(self, item):
         if not item or not self.db:
@@ -645,7 +776,7 @@ class AgendaTableWidget(QWidget):
                     data_fmt = f"{partes[2]}/{partes[1]}/{partes[0]}" if len(partes) == 3 else data_hist
                     
                     # Adiciona a data e as notas (o resumo, serviços ou vacinas que gravaste)
-                    html_content += f"<b style='color: #ffbf00;'>Data: {data_fmt}</b><br>{notas.replace('\n', '<br>')}<br><hr>"
+                    html_content += f"Data: {data_fmt}<br>{notas.replace('\n', '<br>')}<br><hr>"
                 
                 self.txt_historico.setHtml(html_content)
             else:
@@ -654,8 +785,13 @@ class AgendaTableWidget(QWidget):
         except Exception as e:
             print(f"Erro ao atualizar painéis de histórico: {e}")
 
+    def carregar_foto_pet(self, pet_id):
+        row = self.db.conn.execute("SELECT photo_path FROM patients WHERE id = ?", (pet_id,)).fetchone() if self.db and pet_id else None
+        show_photo(self.lbl_det_foto, row[0] if row else None)
+
     def carregar_dados_atendimento_existente(self, pet_id, data_str):
         """Busca se já existe histórico e pagamento salvos para este pet nesta data e preenche o formulário."""
+        self.carregar_foto_pet(pet_id)
         try:
             self.chk_v8.setChecked(False)
             self.chk_v10.setChecked(False)
@@ -684,14 +820,11 @@ class AgendaTableWidget(QWidget):
                 self.txt_atendimento.setPlainText(notes)
                 self.btn_salvar_atendimento.setText("Atualizar Atendimento")
 
-                if "V8" in notes: self.chk_v8.setChecked(True)
-                if "V10" in notes: self.chk_v10.setChecked(True)
-                if "V4" in notes: self.chk_v4.setChecked(True)
-                if "V5" in notes: self.chk_v5.setChecked(True)
-                if "Antirrábica" in notes: self.chk_raiva.setChecked(True)
-                if "Giárdia" in notes: self.chk_giardia.setChecked(True)
-                if "Gripe Canina" in notes: self.chk_gripe.setChecked(True)
-                if "FeLV" in notes: self.chk_feLV.setChecked(True)
+                selected = self.db.consultation_vaccines(self.current_historico_id)
+                if not selected:
+                    selected = [c.strip() for line in re.findall(r"• Vacinas Aplicadas: ([^\n]+)", notes or "") for c in line.split(",")]
+                for code, checkbox in [("V8", self.chk_v8), ("V10", self.chk_v10), ("V4", self.chk_v4), ("V5", self.chk_v5), ("Antirrábica", self.chk_raiva), ("Giárdia", self.chk_giardia), ("Gripe Canina", self.chk_gripe), ("FeLV", self.chk_feLV)]:
+                    checkbox.setChecked(code in selected)
 
                 self.db.cursor.execute("SELECT payment_method, amount, installments, status FROM consultation_payments WHERE consultation_id = ?", (self.current_historico_id,))
                 pags = self.db.cursor.fetchall()
@@ -731,6 +864,7 @@ class AgendaTableWidget(QWidget):
 
         data_app = self.date_edit.date()
         texto = self.txt_atendimento.toPlainText().strip()
+        texto = re.sub(r"^• Vacinas Aplicadas:.*(?:\n|$)", "", texto, flags=re.M).strip()
         data_str = data_app.toString("yyyy-MM-dd")
         if not texto:
             texto = f"- {self.current_service_type}"
@@ -751,44 +885,6 @@ class AgendaTableWidget(QWidget):
         complementos = []
         if vacinas_marcadas:
             complementos.append(f"• Vacinas Aplicadas: {', '.join(vacinas_marcadas)}")
-            try:
-                self.db.cursor.execute("SELECT birth_date FROM patients WHERE id = ?", (self.current_pet_id,))
-                pet_row = self.db.cursor.fetchone()
-                birth_date_str = pet_row[0] if pet_row else ""
-
-                is_filhote = False
-                if birth_date_str:
-                    try:
-                        b_date = datetime.strptime(birth_date_str, "%d/%m/%Y")
-                        hoje_dt = datetime.now()
-                        dias_de_vida = (hoje_dt - b_date).days
-                        if 0 <= dias_de_vida < 365:
-                            is_filhote = True
-                    except ValueError:
-                        pass
-
-                for vac in vacinas_marcadas:
-                    self.db.cursor.execute(
-                        "SELECT COUNT(*) FROM pet_vaccines WHERE pet_id = ? AND vaccine_name = ?", 
-                        (self.current_pet_id, vac)
-                    )
-                    res = self.db.cursor.fetchone()
-                    dose_count = res[0] if res else 0
-
-                    if vac == "Antirrábica":
-                        prox_data = data_app.addYears(1).toString("yyyy-MM-dd")
-                    elif is_filhote and dose_count < 2:
-                        prox_data = data_app.addDays(21).toString("yyyy-MM-dd")
-                    else:
-                        prox_data = data_app.addYears(1).toString("yyyy-MM-dd")
-
-                    self.db.cursor.execute("""
-                        INSERT INTO pet_vaccines (pet_id, vaccine_name, application_date, next_due_date)
-                        VALUES (?, ?, ?, ?)
-                    """, (self.current_pet_id, vac, data_str, prox_data))
-                self.db.conn.commit()
-            except Exception as ex:
-                print(f"Erro ao registrar histórico de vacinas: {ex}")
 
         if vermifugo:
             complementos.append(f"• Vermífugo: {vermifugo}")
@@ -799,17 +895,10 @@ class AgendaTableWidget(QWidget):
             texto += "\n\n" + "\n".join(complementos)
         
         try:
-            if self.current_historico_id:
-                self.db.atualizar_historico(self.current_historico_id, texto)
-                historico_id = self.current_historico_id
-                msg = "Atendimento atualizado com sucesso!"
-            else:
-                historico_id = self.db.salvar_historico(self.current_pet_id, self.current_client_id, data_str, texto)
-                msg = "Atendimento salvo com sucesso!"
-
+            msg = "Atendimento atualizado com sucesso!" if self.current_historico_id else "Atendimento salvo com sucesso!"
+            pagamentos = []
             if hasattr(self, 'pagamentos_personalizados') and self.pagamentos_personalizados:
-                self.db.salvar_pagamentos(historico_id, self.pagamentos_personalizados)
-                self.pagamentos_personalizados = None
+                pagamentos = self.pagamentos_personalizados
             else:
                 try:
                     txt_v = self.txt_valor_atendimento.text().replace(".", "").replace(",", ".").strip()
@@ -836,8 +925,16 @@ class AgendaTableWidget(QWidget):
                         parcelas = 1
 
                 if valor_total > 0:
-                    self.db.salvar_pagamentos(historico_id, [(metodo_escolhido, valor_total, parcelas, status_pagamento)])
+                    pagamentos = [(metodo_escolhido, valor_total, parcelas, status_pagamento)]
 
+            historico_id = self.db.save_consultation_with_stock(
+                self.current_historico_id, self.current_pet_id, self.current_client_id,
+                data_str, texto, vacinas_marcadas, pagamentos)
+            self.current_historico_id = historico_id
+            self.pagamentos_personalizados = None
+            parent_main = self.window()
+            if hasattr(parent_main, "inventory_tab"):
+                parent_main.inventory_tab.reload()
             QMessageBox.information(self, "Sucesso", msg)
 
             # --- ATUALIZAÇÃO AUTOMÁTICA DA ABA DE CAIXA EM TEMPO REAL ---
@@ -879,6 +976,7 @@ class AgendaTableWidget(QWidget):
             cal = self.date_edit.calendarWidget()
             if cal:
                 self.pintar_dias_com_eventos(cal.yearShown(), cal.monthShown())
+            self.carregar_dados_atendimento_existente(self.current_pet_id, data_str)
         except Exception as e:
             QMessageBox.critical(self, "Erro", f"Erro ao salvar: {e}")
 
@@ -893,6 +991,7 @@ class AgendaTableWidget(QWidget):
         self.lbl_det_nascimento.setText("-")
         self.lbl_det_idade.setText("-")
         self.lbl_det_peso.setText("-")
+        self.carregar_foto_pet(None)
         self.txt_atendimento.clear()
         self.txt_historico.clear()
         
@@ -960,7 +1059,7 @@ class MainUI(QMainWindow):
         super().__init__()
         self.db = db
         self.setWindowTitle("VaultVet - Veterinary Management System")
-        self.setMinimumSize(1000, 650)
+        self.setMinimumSize(1000, 550)
         self.setWindowIcon(QIcon("../assets/logo_VaultVet.png"))  
         
         self.init_ui()
@@ -979,9 +1078,8 @@ class MainUI(QMainWindow):
         
         self.cash_flow_tab = CashFlowTab(parent=self, db=self.db, main_window=self)
 
-        self.inventory_tab = QWidget()  
-        inventory_layout = QVBoxLayout(self.inventory_tab)
-        inventory_layout.addWidget(QLabel("Estoque - Em desenvolvimento"))
+        self.inventory_tab = InventoryUI(parent=self, db=self.db)
+        self.inventory_tab.stock_saved.connect(self.home_tab.refresh_inventory_alerts)
 
         self.tabs.addTab(self.home_tab, "Início")
         self.tabs.addTab(self.client_list_ui, "Clientes")
@@ -996,8 +1094,12 @@ class MainUI(QMainWindow):
 
     def ao_mudar_aba(self, index):
         widget_atual = self.tabs.widget(index)
-        if widget_atual == self.agenda_tab:
+        if widget_atual == self.home_tab:
+            self.home_tab.refresh_inventory_alerts()
+        elif widget_atual == self.agenda_tab:
             self.agenda_tab.carregar_dados_clientes()
+        elif widget_atual == self.inventory_tab:
+            self.inventory_tab.reload()
         elif widget_atual == self.cash_flow_tab:
             if hasattr(self.cash_flow_tab, "carregar_dados_caixa"):
                 self.cash_flow_tab.carregar_dados_caixa()
@@ -1019,22 +1121,33 @@ class MainUI(QMainWindow):
         try:
             # 1. Buscar a data e o pet associados a este pagamento no banco de dados
             self.db.cursor.execute("""
-                SELECT ch.pet_id, ch.date 
+                SELECT ch.pet_id, ch.date, ch.client_id,
+                       c.first_name || ' ' || COALESCE(c.last_name, ''),
+                       p.pet_name, p.breed, p.birth_date, p.age, p.weight
                 FROM consultation_payments cp
                 JOIN consultation_history ch ON cp.consultation_id = ch.id
+                JOIN patients p ON p.id = ch.pet_id
+                JOIN clients c ON c.id = ch.client_id
                 WHERE cp.id = ?
             """, (pay_id,))
             resultado = self.db.cursor.fetchone()
             
             if resultado:
-                pet_id, data_atend = resultado
+                pet_id, data_atend, client_id, tutor, pet, breed, birth, age, weight = resultado
                 
                 # 2. Mudar a data no calendário da aba inicial (AgendaTableWidget)
                 ano, mes, dia = map(int, data_atend.split('-'))
                 self.home_tab.date_edit.setDate(QDate(ano, mes, dia))
                 
                 # 3. Forçar o carregamento dos dados do formulário para aquele pet na data específica
+                self.tabs.setCurrentWidget(self.home_tab)
                 self.home_tab.current_pet_id = pet_id
+                self.home_tab.current_client_id = client_id
+                for label, value in [(self.home_tab.lbl_det_cliente, tutor), (self.home_tab.lbl_det_pet, pet),
+                                     (self.home_tab.lbl_det_raca, breed), (self.home_tab.lbl_det_nascimento, birth),
+                                     (self.home_tab.lbl_det_idade, age), (self.home_tab.lbl_det_peso, f"{weight} kg" if weight is not None else "-")]:
+                    label.setText(str(value) if value is not None and str(value).strip() else "-")
+                self.home_tab.atualizar_paineis_atendimento(pet_id)
                 self.home_tab.carregar_dados_atendimento_existente(pet_id, data_atend)
             else:
                 QMessageBox.warning(self, "Aviso", "Pagamento não encontrado no banco de dados.")
